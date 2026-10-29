@@ -8,8 +8,8 @@
     <meta name="apple-mobile-web-app-title" content="Argon">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#09090b">
-    <link rel="manifest" href="/static/manifest.webmanifest">
-    <link rel="apple-touch-icon" href="/static/icon-180.png">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icons/icon-180.png">
     <title>Argon RSVP</title>
     <script>
         // Theme vor dem ersten Paint setzen, damit nichts aufblitzt
@@ -392,7 +392,8 @@
         const DEMO_TEXT = [
             'Willkommen bei Argon.',
             'Tippe irgendwo auf den Bildschirm, um zu starten, und noch einmal, um zu pausieren. Dein Blick bleibt einfach auf dem roten Buchstaben – die Wörter kommen zu dir.',
-            'Oben lädst du ein EPUB oder PDF und stellst die Geschwindigkeit zwischen 200 und 1000 Wörtern pro Minute ein. Satzzeichen, Absätze und lange Wörter wie Donaudampfschifffahrtsgesellschaft bekommen automatisch etwas mehr Zeit.',
+            'Oben öffnest du ein EPUB oder PDF und stellst die Geschwindigkeit zwischen 200 und 1000 Wörtern pro Minute ein. Satzzeichen, Absätze und lange Wörter wie Donaudampfschifffahrtsgesellschaft bekommen automatisch etwas mehr Zeit.',
+            'Alles passiert direkt auf deinem iPhone – deine Bücher verlassen nie das Gerät.',
             'Der Balken unten zeigt, wie viel du schon geschafft hast. Tippe oder ziehe darauf, um zu springen. Viel Spaß beim Lesen!',
         ];
 
@@ -691,7 +692,7 @@
             saveProgress();
         }
 
-        // Display beim Lesen anlassen (nur in sicheren Kontexten: HTTPS oder localhost)
+        // Display beim Lesen anlassen (Safari erlaubt das nur über HTTPS)
         async function requestWakeLock() {
             if (!('wakeLock' in navigator)) return;
             try {
@@ -717,30 +718,15 @@
             render();
         }
 
-        async function uploadFile(file) {
+        async function openFile(file) {
             pause();
             document.body.classList.add('is-busy');
             elFileLabel.textContent = '⏳ Lädt…';
-            showMessage(`Extrahiere ${file.name} …`);
+            showMessage(`Lese ${file.name} …`);
             try {
-                const body = new FormData();
-                body.append('file', file);
-                let response;
-                try {
-                    response = await fetch('/api/upload', { method: 'POST', body });
-                } catch {
-                    throw new Error('Server nicht erreichbar – läuft main.py?');
-                }
-                const data = await response.json().catch(() => ({}));
-                if (!response.ok) {
-                    throw new Error(data.detail || `Upload fehlgeschlagen (${response.status})`);
-                }
-                openDoc({
-                    id: data.doc_id,
-                    filename: data.filename,
-                    words: data.words,
-                    paragraphEnds: data.paragraph_ends,
-                });
+                // Parser (inkl. pdf.js) erst laden, wenn wirklich eine Datei geöffnet wird
+                const { extractDocument } = await import('./extract.js');
+                openDoc(await extractDocument(file, showMessage));
                 storage.set(KEYS.CURRENT_DOC, doc.id);
                 try {
                     await docCache.put(doc);
@@ -782,7 +768,7 @@
 
         elFileInput.addEventListener('change', () => {
             const file = elFileInput.files[0];
-            if (file) uploadFile(file);
+            if (file) openFile(file);
         });
 
         elWpmSlider.addEventListener('input', () => setWpm(parseInt(elWpmSlider.value, 10)));
@@ -852,7 +838,12 @@
                 }
             }
             openDoc(cached || demoDoc());
-            if (currentId && !cached) showMessage('Letztes Dokument bitte neu laden');
+            if (currentId && !cached) showMessage('Letztes Dokument bitte neu öffnen');
+
+            // Offline-Fähigkeit: App-Dateien inkl. pdf.js im Service Worker cachen
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service Worker:', err));
+            }
         }
 
         init();

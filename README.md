@@ -4,23 +4,27 @@ Schnelllesen von EPUB- und PDF-Dateien am iPhone per RSVP (Rapid Serial Visual
 Presentation): Wörter erscheinen einzeln in der Bildschirmmitte, der rote
 Fokusbuchstabe (ORP) bleibt dabei immer an derselben Stelle stehen.
 
-## Starten
+Argon ist eine rein statische Web-App. Die Bücher werden direkt auf dem iPhone
+ausgelesen und nirgendwohin hochgeladen. Es läuft kein Server, und nach dem ersten
+Öffnen funktioniert die App auch offline.
 
-```bash
-pip install -r requirements.txt
-```
+## Einrichten (einmalig)
 
-```bash
-python main.py
-```
+1. Auf GitHub im Repo: **Settings → Pages → Build and deployment**
+   - Source: *Deploy from a branch*
+   - Branch: `claude/cool-tesla-3utl1a`, Ordner `/ (root)` → **Save**
+2. Nach ca. einer Minute ist die App unter `https://neinkob69.github.io/reader/` erreichbar.
+3. Auf dem iPhone in Safari öffnen → *Teilen → Zum Home-Bildschirm*.
 
-Das Terminal zeigt die Adresse für das iPhone an (z. B. `http://192.168.1.23:8000`).
-iPhone und Rechner müssen im selben WLAN sein.
+GitHub Pages ist im kostenlosen Plan nur für öffentliche Repos verfügbar. Da keine
+Bücher im Repo liegen, ist dann nur der Code öffentlich. Alternativ funktioniert jeder
+Hoster für statische Seiten (z. B. Cloudflare Pages oder Netlify, auch mit privatem Repo).
 
-**Als App installieren:** In Safari auf *Teilen → Zum Home-Bildschirm*. Argon startet
-dann im Vollbild ohne Adressleiste.
+## Lesen
 
-## Bedienung
+1. Buch in Safari herunterladen (landet in *Dateien → Downloads*).
+2. Argon öffnen → **📄 Datei** → Buch auswählen.
+3. Irgendwo auf den Bildschirm tippen.
 
 | Aktion | Geste |
 | --- | --- |
@@ -30,42 +34,48 @@ dann im Vollbild ohne Adressleiste.
 | Geschwindigkeit | Slider oben (200–1000 WPM) |
 | Desktop | `Leertaste` Start/Pause, `←`/`→` Satz zurück/vor, `↑`/`↓` ±25 WPM |
 
-Position, Geschwindigkeit und Theme bleiben nach einem Reload erhalten. Das aktuelle
-Dokument wird lokal in IndexedDB zwischengespeichert, die Leseposition pro Dokument
-in `localStorage`. Lädst du ein Buch später erneut hoch, geht es an der alten Stelle
-weiter.
+Position, Geschwindigkeit und Theme bleiben erhalten. Das zuletzt geöffnete Buch liegt
+lokal in IndexedDB, die Leseposition wird pro Buch gespeichert. Öffnest du ein früheres
+Buch erneut, geht es an der alten Stelle weiter.
 
-## Wie es funktioniert
+## Aufbau
 
-**Backend (`main.py`)**: FastAPI nimmt die Datei entgegen und liefert
-`{ words: [...], paragraph_ends: [...] }`.
+| Datei | Inhalt |
+| --- | --- |
+| `index.html` | Oberfläche und RSVP-Engine (Vanilla HTML/CSS/JS, kein Build-Schritt) |
+| `extract.js` | Textextraktion aus EPUB/PDF, wird erst beim Öffnen einer Datei geladen |
+| `sw.js` | Service Worker für den Offline-Betrieb |
+| `vendor/pdfjs/` | [pdf.js](https://github.com/mozilla/pdf.js) 6.4.299 (Apache-2.0) |
 
-- EPUB: Kapitel in Lesereihenfolge (Spine), ohne Inhaltsverzeichnis, Fußnoten und
-  `<head>`-Titel. Weiche Trennstriche werden entfernt.
-- PDF: Seitenzahlen und wiederkehrende Kopf-/Fußzeilen werden entfernt, Silbentrennung
-  am Zeilenende wird zusammengefügt (auch über Seitenumbrüche, „Ost-West“ bleibt
-  erhalten), Ligaturen (ﬁ, ﬂ) werden aufgelöst.
-
-**Frontend (`static/index.html`)**: Vanilla HTML/CSS/JS, kein Build-Schritt.
-
-- **ORP-Anker**: 3-Spalten-Flexbox (links und rechts gleich breit, ORP dazwischen), so
-  steht der rote Buchstabe pixelgenau in der Mitte. Zu lange Wörter werden
+- **EPUB**: Entpacken mit der eingebauten `DecompressionStream`-API. Kapitel in
+  Lesereihenfolge (Spine), ohne Inhaltsverzeichnis und Fußnoten. Weiche Trennstriche
+  werden entfernt, DRM-geschützte Bücher werden erkannt.
+- **PDF**: pdf.js liefert Textschnipsel mit Position. Daraus werden Zeilen und Absätze
+  rekonstruiert (Leerraum, Einrückung, Schriftgröße, Spaltenwechsel). Seitenzahlen und
+  wiederkehrende Kopf-/Fußzeilen werden entfernt. Silbentrennung wird zusammengefügt,
+  auch über Seitenumbrüche hinweg; „Ost-West“ bleibt erhalten.
+- **ORP-Anker**: 3-Spalten-Flexbox (links und rechts gleich breit, ORP dazwischen),
+  dadurch steht der rote Buchstabe pixelgenau in der Mitte. Zu lange Wörter werden
   verkleinert statt abgeschnitten.
-- **Timing**: `requestAnimationFrame` mit absoluten Deadlines, also ohne Drift, auch
-  bei 120 Hz oder gedrosselten 30 Hz im Stromsparmodus.
-- **Pacing**: Satzende ×2, Komma/Semikolon/Gedankenstrich ×1,5, Absatzende ×2,6,
-  Wörter mit mehr als 10 Buchstaben und Zahlen bekommen Zuschläge. Abkürzungen wie
-  „z.B.“ lösen keine Satzpause aus. Nach jedem Start laufen die ersten Wörter etwas
-  langsamer an.
+- **Timing**: `requestAnimationFrame` mit absoluten Deadlines, also ohne Drift, auch bei
+  120 Hz oder gedrosselten 30 Hz im Stromsparmodus.
+- **Pacing**: Satzende ×2, Komma/Semikolon/Gedankenstrich ×1,5, Absatzende ×2,6, Zuschläge
+  für Wörter mit mehr als 10 Buchstaben und für Zahlen. Abkürzungen wie „z.B.“ lösen keine
+  Satzpause aus, und nach jedem Start laufen die ersten Wörter etwas langsamer an.
+- **Display**: Beim Lesen verhindert die Wake-Lock-API, dass sich das iPhone sperrt.
 
 ## Grenzen
 
-- **Display-Sperre**: Die Wake-Lock-API, die das Display beim Lesen anlässt,
-  funktioniert in Safari nur über HTTPS. Bei `http://192.168…` sperrt sich das iPhone
-  nach der eingestellten Auto-Sperre. Abhilfe: Auto-Sperre hochsetzen oder HTTPS
-  nutzen, z. B. mit `tailscale serve 8000`.
-- **Rechner muss laufen**: Das Parsing passiert auf dem Server. Ein bereits geladenes
-  Dokument bleibt aber im Cache und lässt sich auch ohne Server weiterlesen, solange
-  die Seite geöffnet bleibt.
-- Gescannte PDFs ohne Textebene (keine OCR) und DRM-geschützte E-Books werden nicht
-  unterstützt.
+- Gescannte PDFs ohne Textebene (keine OCR) und DRM-geschützte E-Books (z. B. aus
+  Apple Books oder Kindle) werden nicht unterstützt.
+- Updates der App werden ab dem übernächsten Öffnen aktiv (der Service Worker
+  aktualisiert im Hintergrund).
+
+## Lokal entwickeln
+
+```bash
+python3 -m http.server 8000
+```
+
+Dann `http://localhost:8000` öffnen (Service Worker und Wake Lock funktionieren auf
+`localhost` auch ohne HTTPS).
