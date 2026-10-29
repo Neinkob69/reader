@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Argon">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#09090b">
+    <link rel="manifest" href="/static/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/static/icon-180.png">
+    <title>Argon RSVP</title>
+    <script>
+        // Theme vor dem ersten Paint setzen, damit nichts aufblitzt
+        (() => {
+            let theme = null;
+            try { theme = localStorage.getItem('argon.theme'); } catch {}
+            if (theme !== 'light' && theme !== 'dark') {
+                theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            }
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <style>
+        :root {
+            --word-size: clamp(2.25rem, min(11vw, 12dvh), 5rem);
+            --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-right: env(safe-area-inset-right, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-left: env(safe-area-inset-left, 0px);
+        }
+
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #09090b;
+            --fg: #f4f4f5;
+            --muted: #71717a;
+            --faint: #3f3f46;
+            --border: #27272a;
+            --orp: #ef4444;
+        }
+
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg: #fafafa;
+            --fg: #18181b;
+            --muted: #71717a;
+            --faint: #d4d4d8;
+            --border: #e4e4e7;
+            --orp: #dc2626;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            overscroll-behavior: none;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: var(--font);
+            /* Kein Markieren, kein Kontextmenü, kein graues Aufblitzen, kein Doppeltipp-Zoom */
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+            /* iOS feuert click auf beliebigen Flächen nur mit cursor: pointer */
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        /* --- Controls oben --- */
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: calc(var(--safe-top) + 10px) calc(var(--safe-right) + 16px) 10px calc(var(--safe-left) + 16px);
+            cursor: default;
+            transition: opacity 0.3s ease;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-width: 40px;
+            min-height: 40px;
+            padding: 0 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: transparent;
+            color: var(--fg);
+            font: 500 0.875rem/1 var(--font);
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .btn:active {
+            transform: scale(0.96);
+        }
+
+        .btn:focus-visible,
+        .wpm input:focus-visible {
+            outline: 2px solid var(--orp);
+            outline-offset: 2px;
+        }
+
+        .file-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        body.is-busy .file-btn {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .wpm {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .wpm input {
+            flex: 1;
+            min-width: 0;
+            accent-color: var(--orp);
+        }
+
+        .wpm output {
+            min-width: 4.6em;
+            text-align: right;
+            font: 600 0.8125rem/1 var(--font);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* --- Lesebühne --- */
+        .stage {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 calc(var(--safe-right) + 12px) 0 calc(var(--safe-left) + 12px);
+        }
+
+        .reticle {
+            position: relative;
+            width: 100%;
+            max-width: 760px;
+            padding: 26px 0;
+        }
+
+        /* Feine Fokusmarken exakt über und unter dem ORP */
+        .reticle::before,
+        .reticle::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            width: 2px;
+            height: 14px;
+            margin-left: -1px;
+            background: var(--faint);
+        }
+
+        .reticle::before { top: 0; }
+        .reticle::after { bottom: 0; }
+
+        /*
+         * 3-Spalten-Layout: links und rechts gleich breit (flex: 1 1 0), der ORP-Buchstabe
+         * dazwischen. Damit steht der rote Buchstabe immer exakt in der Mitte – auch mit
+         * Proportionalschrift, Monospace ist dafür nicht nötig.
+         */
+        .word {
+            display: flex;
+            align-items: center;
+            height: calc(var(--word-size) * 1.3);
+            font: 600 calc(var(--word-size) * var(--fit, 1)) / 1.3 var(--font);
+            letter-spacing: -0.01em;
+            white-space: pre;
+        }
+
+        .side {
+            flex: 1 1 0;
+            min-width: 0;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* flex-end statt text-align: Falls doch etwas überläuft, wird außen abgeschnitten */
+        .side-left { justify-content: flex-end; }
+        .side-right { justify-content: flex-start; }
+
+        .orp {
+            flex: none;
+            color: var(--orp);
+        }
+
+        .hint {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            transform: translateY(calc(var(--word-size) * 0.65 + 44px));
+            text-align: center;
+            font-size: 0.8125rem;
+            color: var(--muted);
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .hud {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 calc(var(--safe-right) + 16px) 0 calc(var(--safe-left) + 16px);
+            font-size: 0.75rem;
+            line-height: 1.45;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+            cursor: default;
+            transition: opacity 0.3s ease;
+        }
+
+        .hud .btn {
+            min-height: 36px;
+            color: var(--muted);
+            font-size: 0.8125rem;
+        }
+
+        .hud-center {
+            flex: 1;
+            min-width: 0;
+            text-align: center;
+        }
+
+        .hud-center span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #doc-name {
+            color: var(--fg);
+            font-weight: 500;
+        }
+
+        /* Fehlermeldungen sollen vollständig lesbar sein */
+        #status-text {
+            white-space: normal;
+        }
+
+        .hud-right {
+            min-width: 6.5em;
+            text-align: right;
+        }
+
+        .hud-right strong {
+            display: block;
+            color: var(--fg);
+            font-weight: 600;
+        }
+
+        /* --- Fortschrittsbalken (großer Touch-Bereich, schmale Linie) --- */
+        .progress {
+            position: relative;
+            height: calc(28px + var(--safe-bottom));
+            cursor: pointer;
+            touch-action: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .progress-track {
+            position: absolute;
+            top: 12px;
+            left: calc(var(--safe-left) + 16px);
+            right: calc(var(--safe-right) + 16px);
+            height: 4px;
+            overflow: hidden;
+            border-radius: 2px;
+            background: var(--border);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--orp);
+            transform: scaleX(0);
+            transform-origin: left center;
+        }
+
+        /* --- Lesemodus: alles außer dem Wort tritt zurück; jeder Tap pausiert --- */
+        body.is-playing .controls,
+        body.is-playing .hud,
+        body.is-playing .hint {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        body.is-playing .progress {
+            opacity: 0.35;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <header class="controls">
+        <label class="btn file-btn" for="file-input">
+            <span id="file-label">📄 Datei</span>
+            <input class="file-input" type="file" id="file-input"
+                   accept=".epub,.pdf,application/epub+zip,application/pdf">
+        </label>
+
+        <div class="wpm">
+            <input type="range" id="wpm-slider" min="200" max="1000" step="25" value="450"
+                   aria-label="Lesegeschwindigkeit">
+            <output id="wpm-display" for="wpm-slider">450 WPM</output>
+        </div>
+
+        <button class="btn" id="theme-toggle" type="button" aria-label="Hell/Dunkel wechseln">☀️</button>
+    </header>
+
+    <main class="stage">
+        <div class="reticle">
+            <div class="word" id="word" aria-live="off">
+                <span class="side side-left"><span id="w-left">A</span></span>
+                <span class="orp" id="w-orp">r</span>
+                <span class="side side-right"><span id="w-right">gon</span></span>
+            </div>
+        </div>
+
+        <p class="hint" id="hint">Tippen zum Lesen</p>
+
+        <div class="hud">
+            <button class="btn" id="btn-rewind" type="button" title="Zum vorherigen Satzanfang">↺ Satz</button>
+            <div class="hud-center">
+                <span id="doc-name">–</span>
+                <span id="status-text">Bereit</span>
+            </div>
+            <div class="hud-right">
+                <strong id="percent-text">0 %</strong>
+                <span id="counter-text">0 / 0</span>
+            </div>
+        </div>
+    </main>
+
+    <footer class="progress" id="progress" aria-label="Fortschritt – tippen oder ziehen zum Springen">
+        <div class="progress-track">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+    </footer>
+
+    <script>
+        'use strict';
+
+        // --- Konfiguration ---
+        const KEYS = {
+            WPM: 'argon.wpm',
+            THEME: 'argon.theme',
+            CURRENT_DOC: 'argon.currentDoc',
+            PROGRESS: 'argon.progress',
+        };
+        const WPM_MIN = 200;
+        const WPM_MAX = 1000;
+        const MIN_FIT = 0.35;        // kleinste Schriftskalierung für extrem lange Wörter
+        const FIT_PADDING = 6;       // px Luft zum Bildschirmrand
+        const RAMP = [1.8, 1.5, 1.25, 1.1]; // sanfter Anlauf nach jedem Start
+        const SAVE_INTERVAL = 2000;  // ms zwischen Fortschritts-Speicherungen beim Lesen
+        const MAX_PROGRESS_ENTRIES = 50;
+
+        const DEMO_TEXT = [
+            'Willkommen bei Argon.',
+            'Tippe irgendwo auf den Bildschirm, um zu starten, und noch einmal, um zu pausieren. Dein Blick bleibt einfach auf dem roten Buchstaben – die Wörter kommen zu dir.',
+            'Oben lädst du ein EPUB oder PDF und stellst die Geschwindigkeit zwischen 200 und 1000 Wörtern pro Minute ein. Satzzeichen, Absätze und lange Wörter wie Donaudampfschifffahrtsgesellschaft bekommen automatisch etwas mehr Zeit.',
+            'Der Balken unten zeigt, wie viel du schon geschafft hast. Tippe oder ziehe darauf, um zu springen. Viel Spaß beim Lesen!',
+        ];
+
+        // --- DOM ---
+        const $ = (id) => document.getElementById(id);
+        const elWord = $('word');
+        const elLeft = $('w-left');
+        const elOrp = $('w-orp');
+        const elRight = $('w-right');
+        const elFileInput = $('file-input');
+        const elFileLabel = $('file-label');
+        const elWpmSlider = $('wpm-slider');
+        const elWpmDisplay = $('wpm-display');
+        const elThemeToggle = $('theme-toggle');
+        const elThemeColor = document.querySelector('meta[name="theme-color"]');
+        const elHint = $('hint');
+        const elRewind = $('btn-rewind');
+        const elDocName = $('doc-name');
+        const elStatus = $('status-text');
+        const elPercent = $('percent-text');
+        const elCounter = $('counter-text');
+        const elProgress = $('progress');
+        const elProgressFill = $('progress-fill');
+
+        const numberFormat = new Intl.NumberFormat('de-DE');
+
+        // --- Zustand ---
+        let doc = null;           // { id, filename, words, paragraphEnds }
+        let weights = null;       // Float32Array: Zeitfaktor je Wort (Pacing)
+        let weightSums = null;    // Float64Array: Präfixsummen für die Restzeit
+        let boundaries = null;    // Uint8Array: 1 = letztes Wort eines Satzes/Absatzes
+        let index = 0;
+        let wpm = 450;
+        let playing = false;
+        let rafId = 0;
+        let deadline = 0;         // Zeitpunkt, an dem das aktuelle Wort wechselt
+        let rampStep = 0;
+        let wakeLock = null;
+        let lastSave = 0;
+        let progress = loadProgress();
+
+        // --- Storage-Helfer (Privatmodus/volle Quota dürfen nie die App brechen) ---
+        const storage = {
+            get(key) {
+                try { return localStorage.getItem(key); } catch { return null; }
+            },
+            set(key, value) {
+                try { localStorage.setItem(key, value); } catch {}
+            },
+        };
+
+        function loadProgress() {
+            try {
+                return JSON.parse(localStorage.getItem(KEYS.PROGRESS)) || {};
+            } catch {
+                return {};
+            }
+        }
+
+        function saveProgress() {
+            if (!doc || doc.id === 'demo') return;
+            progress[doc.id] = { i: index, t: Date.now() };
+            const ids = Object.keys(progress);
+            if (ids.length > MAX_PROGRESS_ENTRIES) {
+                ids.sort((a, b) => progress[a].t - progress[b].t)
+                    .slice(0, ids.length - MAX_PROGRESS_ENTRIES)
+                    .forEach((id) => delete progress[id]);
+            }
+            storage.set(KEYS.PROGRESS, JSON.stringify(progress));
+        }
+
+        // Wort-Arrays ganzer Bücher sprengen schnell das 5-MB-Limit von localStorage,
+        // deshalb liegt das aktuelle Dokument in IndexedDB.
+        const docCache = {
+            open() {
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open('argon', 1);
+                    req.onupgradeneeded = () => req.result.createObjectStore('docs', { keyPath: 'id' });
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            },
+            async run(mode, action) {
+                const db = await this.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction('docs', mode);
+                    const req = action(tx.objectStore('docs'));
+                    tx.oncomplete = () => { db.close(); resolve(req.result); };
+                    tx.onerror = () => { db.close(); reject(tx.error); };
+                });
+            },
+            get(id) {
+                return this.run('readonly', (store) => store.get(id));
+            },
+            put(entry) {
+                return this.run('readwrite', (store) => { store.clear(); return store.put(entry); });
+            },
+        };
+
+        // --- Text-Analyse ---
+        const LETTER = /[\p{L}\p{N}]/u;
+        const SENTENCE_END = /[.!?…]["'»«“”‘’)\]]*$/u;
+        const CLAUSE_END = /[,;:–—]["'»«“”‘’)\]]*$/u;
+        // "z.B.", "z.", "J.", "Dr." … sollen keine Satzende-Pause auslösen
+        const ABBREVIATION = /^(?:\p{L}\.)+$|^(?:dr|prof|bzw|vgl|ca|nr|mr|mrs|ms|st|bspw|evtl|ggf|inkl|sog|hrsg|abb|fig|vs|jr|sr)\.$/iu;
+
+        function countLetters(word) {
+            let n = 0;
+            for (const ch of word) if (LETTER.test(ch)) n++;
+            return n;
+        }
+
+        function endsSentence(word) {
+            if (!SENTENCE_END.test(word)) return false;
+            return !ABBREVIATION.test(word.replace(/^[^\p{L}\p{N}]+/u, ''));
+        }
+
+        // ORP: 1–2 Buchstaben → 1., 3–5 → 2., 6–9 → 3., 10–12 → 4., danach alle 4 Buchstaben eins weiter
+        function orpPosition(letters) {
+            if (letters <= 2) return 0;
+            if (letters <= 5) return 1;
+            if (letters <= 9) return 2;
+            if (letters <= 12) return 3;
+            return 4 + Math.floor((letters - 13) / 4);
+        }
+
+        function splitAtOrp(word) {
+            const chars = Array.from(word); // Codepoints, damit Emoji & Co. nicht zerfallen
+            const letterIdx = [];
+            chars.forEach((ch, i) => { if (LETTER.test(ch)) letterIdx.push(i); });
+            const pos = letterIdx.length
+                ? letterIdx[Math.min(orpPosition(letterIdx.length), letterIdx.length - 1)]
+                : Math.floor((chars.length - 1) / 2);
+            return [chars.slice(0, pos).join(''), chars[pos] || '', chars.slice(pos + 1).join('')];
+        }
+
+        function wordWeight(word, isParagraphEnd) {
+            let w = 1;
+            if (endsSentence(word)) w = 2.0;
+            else if (CLAUSE_END.test(word)) w = 1.5;
+
+            const letters = countLetters(word);
+            if (letters > 10) w += Math.min(0.8, 0.3 + (letters - 10) * 0.05);
+            if (/\d/.test(word)) w += 0.25; // Zahlen brauchen länger
+
+            if (isParagraphEnd) w = Math.max(w, 2.0) + 0.6;
+            return w;
+        }
+
+        function analyze() {
+            const n = doc.words.length;
+            const paragraphEnds = new Set(doc.paragraphEnds);
+            weights = new Float32Array(n);
+            weightSums = new Float64Array(n + 1);
+            boundaries = new Uint8Array(n);
+            for (let i = 0; i < n; i++) {
+                const word = doc.words[i];
+                const isParagraphEnd = paragraphEnds.has(i);
+                weights[i] = wordWeight(word, isParagraphEnd);
+                weightSums[i + 1] = weightSums[i] + weights[i];
+                boundaries[i] = isParagraphEnd || endsSentence(word) ? 1 : 0;
+            }
+        }
+
+        function demoDoc() {
+            const words = [];
+            const paragraphEnds = [];
+            for (const paragraph of DEMO_TEXT) {
+                words.push(...paragraph.split(/\s+/));
+                paragraphEnds.push(words.length - 1);
+            }
+            return { id: 'demo', filename: 'Einführung', words, paragraphEnds };
+        }
+
+        // --- Rendering ---
+        function fitWord() {
+            elWord.style.setProperty('--fit', '1');
+            const half = elWord.clientWidth / 2 - FIT_PADDING;
+            const needed = Math.max(elLeft.offsetWidth, elRight.offsetWidth) + elOrp.offsetWidth / 2;
+            if (needed > half) {
+                elWord.style.setProperty('--fit', Math.max(MIN_FIT, half / needed).toFixed(3));
+            }
+        }
+
+        function formatRemaining() {
+            const ms = (weightSums[doc.words.length] - weightSums[index + 1]) * 60000 / wpm;
+            const mins = Math.round(ms / 60000);
+            if (mins < 1) return ms > 0 ? 'noch < 1 Min.' : 'Fertig';
+            if (mins < 60) return `noch ~${mins} Min.`;
+            return `noch ~${Math.floor(mins / 60)} Std. ${mins % 60} Min.`;
+        }
+
+        function renderStatus() {
+            const total = doc.words.length;
+            const ratio = (index + 1) / total;
+            elProgressFill.style.transform = `scaleX(${ratio})`;
+            elPercent.textContent = `${Math.floor(ratio * 100)} %`;
+            elCounter.textContent = `${numberFormat.format(index + 1)} / ${numberFormat.format(total)}`;
+            elStatus.textContent = formatRemaining();
+        }
+
+        function render() {
+            const [left, orp, right] = splitAtOrp(doc.words[index]);
+            elLeft.textContent = left;
+            elOrp.textContent = orp;
+            elRight.textContent = right;
+            fitWord();
+            renderStatus();
+        }
+
+        function showMessage(text) {
+            elStatus.textContent = text;
+        }
+
+        // --- Wiedergabe: requestAnimationFrame mit absoluten Deadlines (kein Drift) ---
+        function delayFor(i) {
+            const ramp = rampStep < RAMP.length ? RAMP[rampStep] : 1;
+            return weights[i] * ramp * 60000 / wpm;
+        }
+
+        function tick(now) {
+            if (!playing) return;
+            if (!deadline) {
+                deadline = now + delayFor(index);
+            } else if (now >= deadline) {
+                if (index >= doc.words.length - 1) {
+                    pause();
+                    return;
+                }
+                index++;
+                rampStep++;
+                render();
+                const delay = delayFor(index);
+                // Kleine Verspätungen ausgleichen, nach einem Hänger aber nicht durchrasen
+                deadline = now - deadline > delay ? now + delay : deadline + delay;
+                if (now - lastSave > SAVE_INTERVAL) {
+                    saveProgress();
+                    lastSave = now;
+                }
+            }
+            rafId = requestAnimationFrame(tick);
+        }
+
+        function play() {
+            if (playing || !doc) return;
+            if (index >= doc.words.length - 1) {
+                index = 0;
+                render();
+            }
+            playing = true;
+            deadline = 0;
+            rampStep = 0;
+            document.body.classList.add('is-playing');
+            requestWakeLock();
+            rafId = requestAnimationFrame(tick);
+        }
+
+        function pause() {
+            if (!playing) return;
+            playing = false;
+            cancelAnimationFrame(rafId);
+            document.body.classList.remove('is-playing');
+            releaseWakeLock();
+            saveProgress();
+        }
+
+        function togglePlay() {
+            playing ? pause() : play();
+        }
+
+        function seek(i) {
+            if (!doc) return;
+            index = Math.max(0, Math.min(doc.words.length - 1, i));
+            deadline = 0;
+            rampStep = 0;
+            render();
+        }
+
+        function sentenceStart(i) {
+            while (i > 0 && !boundaries[i - 1]) i--;
+            return i;
+        }
+
+        function rewindSentence() {
+            let start = sentenceStart(index);
+            // Schon am Satzanfang? Dann einen Satz weiter zurück
+            if (index - start < 2 && start > 0) start = sentenceStart(start - 1);
+            seek(start);
+            saveProgress();
+        }
+
+        function nextSentence() {
+            let i = index;
+            while (i < doc.words.length - 1 && !boundaries[i]) i++;
+            seek(i + 1);
+            saveProgress();
+        }
+
+        // Display beim Lesen anlassen (nur in sicheren Kontexten: HTTPS oder localhost)
+        async function requestWakeLock() {
+            if (!('wakeLock' in navigator)) return;
+            try {
+                const lock = await navigator.wakeLock.request('screen');
+                if (playing) wakeLock = lock;
+                else lock.release();
+            } catch {}
+        }
+
+        function releaseWakeLock() {
+            if (wakeLock) wakeLock.release().catch(() => {});
+            wakeLock = null;
+        }
+
+        // --- Dokumente laden ---
+        function openDoc(next) {
+            saveProgress();
+            doc = next;
+            analyze();
+            const saved = progress[doc.id];
+            index = saved ? Math.min(saved.i, doc.words.length - 1) : 0;
+            elDocName.textContent = doc.filename;
+            render();
+        }
+
+        async function uploadFile(file) {
+            pause();
+            document.body.classList.add('is-busy');
+            elFileLabel.textContent = '⏳ Lädt…';
+            showMessage(`Extrahiere ${file.name} …`);
+            try {
+                const body = new FormData();
+                body.append('file', file);
+                let response;
+                try {
+                    response = await fetch('/api/upload', { method: 'POST', body });
+                } catch {
+                    throw new Error('Server nicht erreichbar – läuft main.py?');
+                }
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.detail || `Upload fehlgeschlagen (${response.status})`);
+                }
+                openDoc({
+                    id: data.doc_id,
+                    filename: data.filename,
+                    words: data.words,
+                    paragraphEnds: data.paragraph_ends,
+                });
+                storage.set(KEYS.CURRENT_DOC, doc.id);
+                try {
+                    await docCache.put(doc);
+                } catch (err) {
+                    console.warn('Dokument konnte nicht lokal gecacht werden:', err);
+                }
+            } catch (err) {
+                showMessage(`Fehler: ${err.message}`);
+            } finally {
+                document.body.classList.remove('is-busy');
+                elFileLabel.textContent = '📄 Datei';
+                elFileInput.value = '';
+            }
+        }
+
+        // --- Einstellungen ---
+        function setWpm(value) {
+            wpm = Math.max(WPM_MIN, Math.min(WPM_MAX, value));
+            elWpmSlider.value = wpm;
+            elWpmDisplay.textContent = `${wpm} WPM`;
+            storage.set(KEYS.WPM, String(wpm));
+            if (doc) renderStatus();
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.dataset.theme = theme;
+            elThemeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+            elThemeColor.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+        }
+
+        // --- Events ---
+        document.addEventListener('click', (e) => {
+            // Während des Lesens sind alle Controls inaktiv, also pausiert jeder Tap
+            if (e.target.closest('.controls, .hud button, .progress')) return;
+            togglePlay();
+        });
+
+        elRewind.addEventListener('click', rewindSentence);
+
+        elFileInput.addEventListener('change', () => {
+            const file = elFileInput.files[0];
+            if (file) uploadFile(file);
+        });
+
+        elWpmSlider.addEventListener('input', () => setWpm(parseInt(elWpmSlider.value, 10)));
+
+        elThemeToggle.addEventListener('click', () => {
+            const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+            applyTheme(next);
+            storage.set(KEYS.THEME, next);
+        });
+
+        function scrubTo(e) {
+            const rect = elProgress.querySelector('.progress-track').getBoundingClientRect();
+            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            seek(Math.round(ratio * (doc.words.length - 1)));
+        }
+
+        elProgress.addEventListener('pointerdown', (e) => {
+            if (!doc) return;
+            elProgress.setPointerCapture(e.pointerId);
+            scrubTo(e);
+        });
+        elProgress.addEventListener('pointermove', (e) => {
+            if (elProgress.hasPointerCapture(e.pointerId)) scrubTo(e);
+        });
+        elProgress.addEventListener('pointerup', saveProgress);
+        elProgress.addEventListener('pointercancel', saveProgress);
+
+        document.addEventListener('keydown', (e) => {
+            if (!doc || e.target.matches('input, button')) return;
+            const actions = {
+                ' ': togglePlay,
+                ArrowLeft: rewindSentence,
+                ArrowRight: nextSentence,
+                ArrowUp: () => setWpm(wpm + 25),
+                ArrowDown: () => setWpm(wpm - 25),
+            };
+            const action = actions[e.key];
+            if (action) {
+                e.preventDefault();
+                action();
+            }
+        });
+
+        // App-Wechsel, Sperrbildschirm, Tab-Wechsel: pausieren und Position sichern
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                pause();
+                saveProgress();
+            }
+        });
+        window.addEventListener('pagehide', saveProgress);
+        window.addEventListener('resize', () => { if (doc) fitWord(); });
+
+        // --- Start ---
+        async function init() {
+            applyTheme(document.documentElement.dataset.theme);
+            const savedWpm = parseInt(storage.get(KEYS.WPM), 10);
+            setWpm(Number.isNaN(savedWpm) ? wpm : savedWpm);
+
+            const currentId = storage.get(KEYS.CURRENT_DOC);
+            let cached = null;
+            if (currentId) {
+                try {
+                    cached = await docCache.get(currentId);
+                } catch (err) {
+                    console.warn('Dokument-Cache nicht verfügbar:', err);
+                }
+            }
+            openDoc(cached || demoDoc());
+            if (currentId && !cached) showMessage('Letztes Dokument bitte neu laden');
+        }
+
+        init();
+    </script>
+</body>
+</html>
