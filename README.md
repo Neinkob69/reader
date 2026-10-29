@@ -33,18 +33,36 @@ Danach irgendwo auf den Bildschirm tippen.
 | --- | --- |
 | Lesen starten / pausieren | Irgendwo auf den Bildschirm tippen |
 | Zum vorherigen Satzanfang | `↺ Satz` (im Pausenmodus) |
+| Kapitel wählen | Auf den Titel unten tippen (☰) |
 | Im Dokument springen | Fortschrittsbalken antippen oder ziehen |
 | Geschwindigkeit | Slider oben (200–1000 WPM) |
 | Desktop | `Leertaste` Start/Pause, `←`/`→` Satz zurück/vor, `↑`/`↓` ±25 WPM |
+
+Neue Bücher starten beim eigentlichen Text, Titelei und Inhaltsverzeichnis werden
+übersprungen. Unten steht immer das aktuelle Kapitel.
 
 Position, Geschwindigkeit und Theme bleiben erhalten. Das zuletzt geöffnete Dokument liegt
 lokal in IndexedDB, die Leseposition wird pro Dokument gespeichert. Öffnest du ein früheres
 Buch erneut, geht es an der alten Stelle weiter.
 
+## Kapitel
+
+Die Kapitelansicht nutzt das offizielle Inhaltsverzeichnis des Buchs:
+
+| Format | Quelle der Kapitel |
+| --- | --- |
+| EPUB | Inhaltsverzeichnis (EPUB 3 `nav` oder EPUB 2 NCX), sonst Überschriften |
+| PDF | Lesezeichen, sonst Überschriften (an der größeren Schrift erkannt) |
+| Word | Formatvorlagen „Überschrift 1–3“ |
+| HTML | Überschriften `h1`–`h3` |
+| TXT / eingefügt | Zeilen wie „Kapitel 3“, „CHAPTER IV“, „Prolog“ |
+
 ## Was automatisch übersprungen wird
 
 Gelesen wird nur der Fließtext. Alles andere wird ausgelassen:
 
+- Inhaltsverzeichnisse und Register (in EPUBs auch, wenn sie nicht als solche markiert
+  sind, in PDFs Seiten mit „Kapitel 3 ...... 41“-Zeilen)
 - Bilder, Videos, Audio, Animationen (SVG/Canvas) und interaktive Elemente samt deren
   Ersatztexten wie „Ihr Gerät unterstützt kein Video“
 - Bildunterschriften, Fußnoten und Fußnotenverweise

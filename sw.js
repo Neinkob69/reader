@@ -2,7 +2,7 @@
 // Stale-while-revalidate: sofort aus dem Cache antworten, im Hintergrund aktualisieren.
 // Neue Versionen sind dadurch ab dem übernächsten Öffnen aktiv.
 
-const CACHE = 'fastreading-v1';
+const CACHE = 'fastreading-v2';
 const ASSETS = [
     './',
     'index.html',

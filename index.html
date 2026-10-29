@@ -360,7 +360,27 @@
         .hud-center {
             flex: 1;
             min-width: 0;
+            padding: 4px 6px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: inherit;
+            font: inherit;
             text-align: center;
+            cursor: pointer;
+        }
+
+        .hud-center:disabled {
+            cursor: default;
+        }
+
+        .hud-center:not(:disabled):active {
+            background: var(--border);
+        }
+
+        .hud-center:not(:disabled) #doc-name::before {
+            content: "☰ ";
+            color: var(--muted);
         }
 
         .hud-center span {
@@ -376,13 +396,97 @@
         }
 
         /* Fehlermeldungen sollen vollständig lesbar sein */
-        #status-text {
+        #status-text.is-message {
             white-space: normal;
         }
 
         .hud-right {
-            min-width: 6.5em;
+            min-width: 7em;
             text-align: right;
+        }
+
+        /* --- Kapitelansicht --- */
+        .toc-dialog {
+            width: min(560px, calc(100vw - 32px));
+            max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
+            margin: calc(var(--safe-top) + 16px) auto auto;
+            padding: 0;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--raised);
+            color: var(--fg);
+            cursor: default;
+        }
+
+        .toc-dialog[open] {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toc-dialog::backdrop {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .sheet-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 10px 10px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sheet-head h2 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .toc-list {
+            flex: 1;
+            min-height: 0;
+            padding: 6px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            list-style: none;
+        }
+
+        .toc-item {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            width: 100%;
+            padding: 10px 12px 10px calc(12px + var(--level, 0) * 16px);
+            border: 0;
+            border-radius: 9px;
+            background: transparent;
+            color: var(--fg);
+            font: 400 0.9375rem/1.35 var(--font);
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .toc-item:active {
+            background: var(--border);
+        }
+
+        .toc-title {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .toc-pos {
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .toc-item.is-read .toc-title {
+            color: var(--muted);
+        }
+
+        .toc-item.is-current {
+            color: var(--orp);
+            font-weight: 600;
         }
 
         .hud-right strong {
@@ -475,13 +579,13 @@
 
         <div class="hud">
             <button class="btn" id="btn-rewind" type="button" title="Zum vorherigen Satzanfang">↺ Satz</button>
-            <div class="hud-center">
+            <button class="hud-center" id="toc-btn" type="button" aria-haspopup="dialog" disabled>
                 <span id="doc-name">–</span>
                 <span id="status-text">Bereit</span>
-            </div>
+            </button>
             <div class="hud-right">
                 <strong id="percent-text">0 %</strong>
-                <span id="counter-text">0 / 0</span>
+                <span id="remaining-text"></span>
             </div>
         </div>
     </main>
@@ -491,6 +595,14 @@
             <div class="progress-fill" id="progress-fill"></div>
         </div>
     </footer>
+
+    <dialog class="toc-dialog" id="toc-dialog" aria-labelledby="toc-title">
+        <div class="sheet-head">
+            <h2 id="toc-title">Inhalt</h2>
+            <button class="btn" id="toc-close" type="button" aria-label="Schließen">✕</button>
+        </div>
+        <ol class="toc-list" id="toc-list"></ol>
+    </dialog>
 
     <dialog class="paste-dialog" id="paste-dialog" aria-labelledby="paste-title">
         <h2 id="paste-title">Text einfügen</h2>
@@ -526,7 +638,7 @@
             'Tippe irgendwo auf den Bildschirm, um zu starten, und noch einmal, um zu pausieren. Dein Blick bleibt einfach auf dem roten Buchstaben – die Wörter kommen zu dir.',
             'Über „Öffnen“ lädst du ein Buch als EPUB, PDF, Word- oder Textdatei – oder fügst einfach einen kopierten Artikel ein. Daneben stellst du die Geschwindigkeit zwischen 200 und 1000 Wörtern pro Minute ein. Satzzeichen, Absätze und lange Wörter wie Donaudampfschifffahrtsgesellschaft bekommen automatisch etwas mehr Zeit.',
             'Alles passiert direkt auf deinem iPhone – deine Bücher verlassen nie das Gerät.',
-            'Der Balken unten zeigt, wie viel du schon geschafft hast. Tippe oder ziehe darauf, um zu springen. Viel Spaß beim Lesen!',
+            'Der Balken unten zeigt, wie viel du schon geschafft hast. Tippe oder ziehe darauf, um zu springen – oder tippe bei einem Buch auf den Titel, um direkt zu einem Kapitel zu gehen. Viel Spaß beim Lesen!',
         ];
 
         // --- DOM ---
@@ -551,7 +663,10 @@
         const elDocName = $('doc-name');
         const elStatus = $('status-text');
         const elPercent = $('percent-text');
-        const elCounter = $('counter-text');
+        const elRemaining = $('remaining-text');
+        const elTocBtn = $('toc-btn');
+        const elTocDialog = $('toc-dialog');
+        const elTocList = $('toc-list');
         const elProgress = $('progress');
         const elProgressFill = $('progress-fill');
 
@@ -562,6 +677,7 @@
         let weights = null;       // Float32Array: Zeitfaktor je Wort (Pacing)
         let weightSums = null;    // Float64Array: Präfixsummen für die Restzeit
         let boundaries = null;    // Uint8Array: 1 = letztes Wort eines Satzes/Absatzes
+        let chapterOrder = [];    // Kapitel nach Wortposition sortiert
         let index = 0;
         let wpm = 450;
         let playing = false;
@@ -693,6 +809,24 @@
                 weightSums[i + 1] = weightSums[i] + weights[i];
                 boundaries[i] = isParagraphEnd || endsSentence(word) ? 1 : 0;
             }
+            chapterOrder = (doc.chapters || []).slice().sort((a, b) => a.index - b.index);
+        }
+
+        // Kapitel, in dem Wort i steht (binäre Suche); undefined vor dem ersten Kapitel
+        function chapterAt(i) {
+            let lo = 0;
+            let hi = chapterOrder.length - 1;
+            let found;
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1;
+                if (chapterOrder[mid].index <= i) {
+                    found = chapterOrder[mid];
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            return found;
         }
 
         function demoDoc() {
@@ -718,18 +852,27 @@
         function formatRemaining() {
             const ms = (weightSums[doc.words.length] - weightSums[index + 1]) * 60000 / wpm;
             const mins = Math.round(ms / 60000);
-            if (mins < 1) return ms > 0 ? 'noch < 1 Min.' : 'Fertig';
-            if (mins < 60) return `noch ~${mins} Min.`;
-            return `noch ~${Math.floor(mins / 60)} Std. ${mins % 60} Min.`;
+            if (mins < 1) return ms > 0 ? 'noch < 1 min' : 'fertig';
+            if (mins < 60) return `noch ${mins} min`;
+            return `noch ${Math.floor(mins / 60)} h ${mins % 60} min`;
+        }
+
+        // Nur bei Änderung ins DOM schreiben, das läuft bei jedem Wort
+        function setText(el, text) {
+            if (el.textContent !== text) el.textContent = text;
         }
 
         function renderStatus() {
             const total = doc.words.length;
             const ratio = (index + 1) / total;
             elProgressFill.style.transform = `scaleX(${ratio})`;
-            elPercent.textContent = `${Math.floor(ratio * 100)} %`;
-            elCounter.textContent = `${numberFormat.format(index + 1)} / ${numberFormat.format(total)}`;
-            elStatus.textContent = formatRemaining();
+            setText(elPercent, `${Math.floor(ratio * 100)} %`);
+            setText(elRemaining, formatRemaining());
+            const chapter = chapterAt(index);
+            elStatus.classList.remove('is-message');
+            setText(elStatus, chapter
+                ? chapter.title
+                : `${numberFormat.format(index + 1)} / ${numberFormat.format(total)} Wörter`);
         }
 
         function render() {
@@ -742,7 +885,38 @@
         }
 
         function showMessage(text) {
+            elStatus.classList.add('is-message');
             elStatus.textContent = text;
+        }
+
+        // --- Kapitelansicht ---
+        function openToc() {
+            const current = chapterAt(index);
+            elTocList.replaceChildren(...doc.chapters.map((chapter) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'toc-item';
+                button.style.setProperty('--level', Math.min(chapter.level, 3));
+                if (chapter === current) button.classList.add('is-current');
+                else if (current && chapter.index < current.index) button.classList.add('is-read');
+                const title = document.createElement('span');
+                title.className = 'toc-title';
+                title.textContent = chapter.title;
+                const position = document.createElement('span');
+                position.className = 'toc-pos';
+                position.textContent = `${Math.floor((chapter.index / doc.words.length) * 100)} %`;
+                button.append(title, position);
+                button.addEventListener('click', () => {
+                    seek(chapter.index);
+                    saveProgress();
+                    elTocDialog.close();
+                });
+                const item = document.createElement('li');
+                item.append(button);
+                return item;
+            }));
+            elTocDialog.showModal();
+            elTocList.querySelector('.is-current')?.scrollIntoView({ block: 'center' });
         }
 
         // --- Wiedergabe: requestAnimationFrame mit absoluten Deadlines (kein Drift) ---
@@ -850,9 +1024,12 @@
             doc = next;
             analyze();
             const saved = progress[doc.id];
-            index = saved ? Math.min(saved.i, doc.words.length - 1) : 0;
+            // Neue Bücher beginnen beim eigentlichen Text (nach Titelei & Inhaltsverzeichnis)
+            index = Math.min(saved ? saved.i : doc.start || 0, doc.words.length - 1);
             elDocName.textContent = doc.filename;
+            elTocBtn.disabled = chapterOrder.length < 2;
             render();
+            if (!saved && doc.start > 0) showMessage('Vorspann übersprungen – ☰ zeigt alle Kapitel');
         }
 
         // Gemeinsamer Ablauf für Dateien und eingefügten Text
@@ -948,6 +1125,8 @@
         });
 
         elRewind.addEventListener('click', rewindSentence);
+        elTocBtn.addEventListener('click', openToc);
+        $('toc-close').addEventListener('click', () => elTocDialog.close());
 
         elFileInput.addEventListener('change', () => {
             const file = elFileInput.files[0];
@@ -981,7 +1160,7 @@
         elProgress.addEventListener('pointercancel', saveProgress);
 
         document.addEventListener('keydown', (e) => {
-            if (!doc || elPasteDialog.open || e.target.matches('input, button, textarea')) return;
+            if (!doc || elPasteDialog.open || elTocDialog.open || e.target.matches('input, button, textarea')) return;
             const actions = {
                 ' ': togglePlay,
                 ArrowLeft: rewindSentence,
