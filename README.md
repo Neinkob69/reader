@@ -1,10 +1,10 @@
-# Argon RSVP
+# Fastreading
 
-Schnelllesen von EPUB- und PDF-Dateien am iPhone per RSVP (Rapid Serial Visual
-Presentation): Wörter erscheinen einzeln in der Bildschirmmitte, der rote
-Fokusbuchstabe (ORP) bleibt dabei immer an derselben Stelle stehen.
+Schnelllesen am iPhone per RSVP (Rapid Serial Visual Presentation): Wörter erscheinen
+einzeln in der Bildschirmmitte, der rote Fokusbuchstabe (ORP) bleibt dabei immer an
+derselben Stelle stehen.
 
-Argon ist eine rein statische Web-App. Die Bücher werden direkt auf dem iPhone
+Fastreading ist eine rein statische Web-App. Alle Dateien werden direkt auf dem iPhone
 ausgelesen und nirgendwohin hochgeladen. Es läuft kein Server, und nach dem ersten
 Öffnen funktioniert die App auch offline.
 
@@ -22,9 +22,12 @@ Hoster für statische Seiten (z. B. Cloudflare Pages oder Netlify, auch mit priv
 
 ## Lesen
 
-1. Buch in Safari herunterladen (landet in *Dateien → Downloads*).
-2. Argon öffnen → **📄 Datei** → Buch auswählen.
-3. Irgendwo auf den Bildschirm tippen.
+**📄 Öffnen** bietet zwei Wege:
+
+- **Datei öffnen**: EPUB, PDF, Word (DOCX), TXT oder HTML, z. B. aus *Dateien → Downloads*
+- **Text einfügen**: kopierten Text aus einer beliebigen App oder Webseite einfügen
+
+Danach irgendwo auf den Bildschirm tippen.
 
 | Aktion | Geste |
 | --- | --- |
@@ -34,26 +37,37 @@ Hoster für statische Seiten (z. B. Cloudflare Pages oder Netlify, auch mit priv
 | Geschwindigkeit | Slider oben (200–1000 WPM) |
 | Desktop | `Leertaste` Start/Pause, `←`/`→` Satz zurück/vor, `↑`/`↓` ±25 WPM |
 
-Position, Geschwindigkeit und Theme bleiben erhalten. Das zuletzt geöffnete Buch liegt
-lokal in IndexedDB, die Leseposition wird pro Buch gespeichert. Öffnest du ein früheres
+Position, Geschwindigkeit und Theme bleiben erhalten. Das zuletzt geöffnete Dokument liegt
+lokal in IndexedDB, die Leseposition wird pro Dokument gespeichert. Öffnest du ein früheres
 Buch erneut, geht es an der alten Stelle weiter.
+
+## Was automatisch übersprungen wird
+
+Gelesen wird nur der Fließtext. Alles andere wird ausgelassen:
+
+- Bilder, Videos, Audio, Animationen (SVG/Canvas) und interaktive Elemente samt deren
+  Ersatztexten wie „Ihr Gerät unterstützt kein Video“
+- Bildunterschriften, Fußnoten und Fußnotenverweise
+- In PDFs: Diagrammbeschriftungen, Zahlenkolonnen, Seitenzahlen sowie wiederkehrende
+  Kopf- und Fußzeilen
+- Bei gespeicherten Webseiten: Navigation, Seitenleisten und Fußbereich
+- Bei TXT von Project Gutenberg: der Lizenztext vor und nach dem Buch
 
 ## Aufbau
 
 | Datei | Inhalt |
 | --- | --- |
 | `index.html` | Oberfläche und RSVP-Engine (Vanilla HTML/CSS/JS, kein Build-Schritt) |
-| `extract.js` | Textextraktion aus EPUB/PDF, wird erst beim Öffnen einer Datei geladen |
+| `extract.js` | Textextraktion aller Formate, wird erst beim Öffnen geladen |
 | `sw.js` | Service Worker für den Offline-Betrieb |
 | `vendor/pdfjs/` | [pdf.js](https://github.com/mozilla/pdf.js) 6.4.299 (Apache-2.0) |
 
-- **EPUB**: Entpacken mit der eingebauten `DecompressionStream`-API. Kapitel in
-  Lesereihenfolge (Spine), ohne Inhaltsverzeichnis und Fußnoten. Weiche Trennstriche
-  werden entfernt, DRM-geschützte Bücher werden erkannt.
+- **EPUB/DOCX**: Entpacken mit der eingebauten `DecompressionStream`-API. EPUB-Kapitel
+  in Lesereihenfolge (Spine), ohne Inhaltsverzeichnis. Weiche Trennstriche werden
+  entfernt, DRM-geschützte Bücher werden erkannt.
 - **PDF**: pdf.js liefert Textschnipsel mit Position. Daraus werden Zeilen und Absätze
-  rekonstruiert (Leerraum, Einrückung, Schriftgröße, Spaltenwechsel). Seitenzahlen und
-  wiederkehrende Kopf-/Fußzeilen werden entfernt. Silbentrennung wird zusammengefügt,
-  auch über Seitenumbrüche hinweg; „Ost-West“ bleibt erhalten.
+  rekonstruiert (Leerraum, Einrückung, Schriftgröße, Spaltenwechsel). Silbentrennung
+  wird zusammengefügt, auch über Seitenumbrüche hinweg; „Ost-West“ bleibt erhalten.
 - **ORP-Anker**: 3-Spalten-Flexbox (links und rechts gleich breit, ORP dazwischen),
   dadurch steht der rote Buchstabe pixelgenau in der Mitte. Zu lange Wörter werden
   verkleinert statt abgeschnitten.
@@ -66,8 +80,12 @@ Buch erneut, geht es an der alten Stelle weiter.
 
 ## Grenzen
 
-- Gescannte PDFs ohne Textebene (keine OCR) und DRM-geschützte E-Books (z. B. aus
-  Apple Books oder Kindle) werden nicht unterstützt.
+- **Kindle-Formate (MOBI/AZW)** werden nicht unterstützt. Die meisten Seiten bieten
+  dasselbe Buch auch als EPUB an.
+- **Text in Bildern** lässt sich nicht lesen (keine OCR): gescannte PDFs, DjVu, Comics
+  und Bilderbücher im Fixed-Layout.
+- **DRM-geschützte E-Books** (z. B. gekauft bei Apple Books oder Kindle) lassen sich
+  nicht öffnen.
 - Updates der App werden ab dem übernächsten Öffnen aktiv (der Service Worker
   aktualisiert im Hintergrund).
 

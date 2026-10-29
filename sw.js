@@ -1,8 +1,8 @@
-// Argon – Service Worker: hält die App offline verfügbar.
+// Fastreading – Service Worker: hält die App offline verfügbar.
 // Stale-while-revalidate: sofort aus dem Cache antworten, im Hintergrund aktualisieren.
 // Neue Versionen sind dadurch ab dem übernächsten Öffnen aktiv.
 
-const CACHE = 'argon-v1';
+const CACHE = 'fastreading-v1';
 const ASSETS = [
     './',
     'index.html',

@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="Argon">
+    <meta name="apple-mobile-web-app-title" content="Fastreading">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#09090b">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="apple-touch-icon" href="icons/icon-180.png">
-    <title>Argon RSVP</title>
+    <title>Fastreading</title>
     <script>
         // Theme vor dem ersten Paint setzen, damit nichts aufblitzt
         (() => {
             let theme = null;
-            try { theme = localStorage.getItem('argon.theme'); } catch {}
+            try { theme = localStorage.getItem('fastreading.theme'); } catch {}
             if (theme !== 'light' && theme !== 'dark') {
                 theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
             }
@@ -39,6 +39,7 @@
             --muted: #71717a;
             --faint: #3f3f46;
             --border: #27272a;
+            --raised: #18181b;
             --orp: #ef4444;
         }
 
@@ -49,6 +50,7 @@
             --muted: #71717a;
             --faint: #d4d4d8;
             --border: #e4e4e7;
+            --raised: #ffffff;
             --orp: #dc2626;
         }
 
@@ -56,6 +58,10 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+        }
+
+        [hidden] {
+            display: none !important;
         }
 
         body {
@@ -124,9 +130,111 @@
             pointer-events: none;
         }
 
-        body.is-busy .file-btn {
+        body.is-busy .open-btn {
             opacity: 0.5;
             pointer-events: none;
+        }
+
+        /* --- Öffnen-Menü --- */
+        .open-menu {
+            position: relative;
+        }
+
+        .menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            z-index: 30;
+            width: max-content;
+            min-width: 230px;
+            padding: 6px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--raised);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+        }
+
+        .menu-item {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+            width: 100%;
+            padding: 10px 12px;
+            border: 0;
+            border-radius: 9px;
+            background: transparent;
+            color: var(--fg);
+            font: 500 0.9375rem/1.3 var(--font);
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .menu-item:active,
+        .menu-item:focus-visible {
+            outline: none;
+            background: var(--border);
+        }
+
+        .menu-item small {
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-weight: 400;
+        }
+
+        /* --- Text einfügen --- */
+        .paste-dialog {
+            width: min(560px, calc(100vw - 32px));
+            margin: calc(var(--safe-top) + 16px) auto auto;
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--raised);
+            color: var(--fg);
+            cursor: default;
+        }
+
+        .paste-dialog::backdrop {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .paste-dialog h2 {
+            margin-bottom: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .paste-dialog textarea {
+            display: block;
+            width: 100%;
+            height: 40dvh;
+            padding: 10px 12px;
+            resize: none;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg);
+            color: var(--fg);
+            /* mindestens 16px, sonst zoomt iOS beim Antippen hinein */
+            font: 1rem/1.45 var(--font);
+            user-select: text;
+            -webkit-user-select: text;
+            -webkit-touch-callout: default;
+        }
+
+        .dialog-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .dialog-actions .spacer {
+            flex: 1;
+        }
+
+        .btn-primary {
+            border-color: var(--orp);
+            background: var(--orp);
+            color: #fff;
         }
 
         .wpm {
@@ -326,11 +434,24 @@
 </head>
 <body>
     <header class="controls">
-        <label class="btn file-btn" for="file-input">
-            <span id="file-label">📄 Datei</span>
+        <div class="open-menu">
+            <button class="btn open-btn" id="open-btn" type="button"
+                    aria-haspopup="true" aria-expanded="false" aria-controls="open-menu">
+                <span id="file-label">📄 Öffnen</span>
+            </button>
+            <div class="menu" id="open-menu" hidden>
+                <label class="menu-item" for="file-input">
+                    📄 Datei öffnen
+                    <small>EPUB, PDF, Word, TXT oder HTML</small>
+                </label>
+                <button class="menu-item" id="paste-btn" type="button">
+                    📋 Text einfügen
+                    <small>z. B. einen kopierten Artikel</small>
+                </button>
+            </div>
             <input class="file-input" type="file" id="file-input"
-                   accept=".epub,.pdf,application/epub+zip,application/pdf">
-        </label>
+                   accept=".epub,.pdf,.docx,.txt,.md,.html,.htm,application/epub+zip,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/html">
+        </div>
 
         <div class="wpm">
             <input type="range" id="wpm-slider" min="200" max="1000" step="25" value="450"
@@ -344,9 +465,9 @@
     <main class="stage">
         <div class="reticle">
             <div class="word" id="word" aria-live="off">
-                <span class="side side-left"><span id="w-left">A</span></span>
-                <span class="orp" id="w-orp">r</span>
-                <span class="side side-right"><span id="w-right">gon</span></span>
+                <span class="side side-left"><span id="w-left">F</span></span>
+                <span class="orp" id="w-orp">a</span>
+                <span class="side side-right"><span id="w-right">st</span></span>
             </div>
         </div>
 
@@ -371,15 +492,26 @@
         </div>
     </footer>
 
+    <dialog class="paste-dialog" id="paste-dialog" aria-labelledby="paste-title">
+        <h2 id="paste-title">Text einfügen</h2>
+        <textarea id="paste-text" placeholder="Text hier einfügen …" aria-label="Text zum Lesen"></textarea>
+        <div class="dialog-actions">
+            <button class="btn" id="paste-clipboard" type="button">📋 Einfügen</button>
+            <span class="spacer"></span>
+            <button class="btn" id="paste-cancel" type="button">Abbrechen</button>
+            <button class="btn btn-primary" id="paste-read" type="button">Lesen</button>
+        </div>
+    </dialog>
+
     <script>
         'use strict';
 
         // --- Konfiguration ---
         const KEYS = {
-            WPM: 'argon.wpm',
-            THEME: 'argon.theme',
-            CURRENT_DOC: 'argon.currentDoc',
-            PROGRESS: 'argon.progress',
+            WPM: 'fastreading.wpm',
+            THEME: 'fastreading.theme',
+            CURRENT_DOC: 'fastreading.currentDoc',
+            PROGRESS: 'fastreading.progress',
         };
         const WPM_MIN = 200;
         const WPM_MAX = 1000;
@@ -390,9 +522,9 @@
         const MAX_PROGRESS_ENTRIES = 50;
 
         const DEMO_TEXT = [
-            'Willkommen bei Argon.',
+            'Willkommen bei Fastreading.',
             'Tippe irgendwo auf den Bildschirm, um zu starten, und noch einmal, um zu pausieren. Dein Blick bleibt einfach auf dem roten Buchstaben – die Wörter kommen zu dir.',
-            'Oben öffnest du ein EPUB oder PDF und stellst die Geschwindigkeit zwischen 200 und 1000 Wörtern pro Minute ein. Satzzeichen, Absätze und lange Wörter wie Donaudampfschifffahrtsgesellschaft bekommen automatisch etwas mehr Zeit.',
+            'Über „Öffnen“ lädst du ein Buch als EPUB, PDF, Word- oder Textdatei – oder fügst einfach einen kopierten Artikel ein. Daneben stellst du die Geschwindigkeit zwischen 200 und 1000 Wörtern pro Minute ein. Satzzeichen, Absätze und lange Wörter wie Donaudampfschifffahrtsgesellschaft bekommen automatisch etwas mehr Zeit.',
             'Alles passiert direkt auf deinem iPhone – deine Bücher verlassen nie das Gerät.',
             'Der Balken unten zeigt, wie viel du schon geschafft hast. Tippe oder ziehe darauf, um zu springen. Viel Spaß beim Lesen!',
         ];
@@ -405,6 +537,11 @@
         const elRight = $('w-right');
         const elFileInput = $('file-input');
         const elFileLabel = $('file-label');
+        const elOpenBtn = $('open-btn');
+        const elMenu = $('open-menu');
+        const elPasteDialog = $('paste-dialog');
+        const elPasteText = $('paste-text');
+        const elPasteClipboard = $('paste-clipboard');
         const elWpmSlider = $('wpm-slider');
         const elWpmDisplay = $('wpm-display');
         const elThemeToggle = $('theme-toggle');
@@ -470,7 +607,7 @@
         const docCache = {
             open() {
                 return new Promise((resolve, reject) => {
-                    const req = indexedDB.open('argon', 1);
+                    const req = indexedDB.open('fastreading', 1);
                     req.onupgradeneeded = () => req.result.createObjectStore('docs', { keyPath: 'id' });
                     req.onsuccess = () => resolve(req.result);
                     req.onerror = () => reject(req.error);
@@ -718,15 +855,16 @@
             render();
         }
 
-        async function openFile(file) {
+        // Gemeinsamer Ablauf für Dateien und eingefügten Text
+        async function loadDocument(message, produce) {
             pause();
             document.body.classList.add('is-busy');
             elFileLabel.textContent = '⏳ Lädt…';
-            showMessage(`Lese ${file.name} …`);
+            showMessage(message);
             try {
-                // Parser (inkl. pdf.js) erst laden, wenn wirklich eine Datei geöffnet wird
-                const { extractDocument } = await import('./extract.js');
-                openDoc(await extractDocument(file, showMessage));
+                // Parser (inkl. pdf.js) erst laden, wenn wirklich etwas geöffnet wird
+                const extractor = await import('./extract.js');
+                openDoc(await produce(extractor));
                 storage.set(KEYS.CURRENT_DOC, doc.id);
                 try {
                     await docCache.put(doc);
@@ -737,9 +875,21 @@
                 showMessage(`Fehler: ${err.message}`);
             } finally {
                 document.body.classList.remove('is-busy');
-                elFileLabel.textContent = '📄 Datei';
-                elFileInput.value = '';
+                elFileLabel.textContent = '📄 Öffnen';
             }
+        }
+
+        function openFile(file) {
+            loadDocument(`Lese ${file.name} …`, (extractor) => extractor.extractDocument(file, showMessage));
+        }
+
+        function openText(text) {
+            loadDocument('Bereite Text vor …', (extractor) => extractor.documentFromText(text));
+        }
+
+        function setMenu(open) {
+            elMenu.hidden = !open;
+            elOpenBtn.setAttribute('aria-expanded', String(open));
         }
 
         // --- Einstellungen ---
@@ -759,15 +909,49 @@
 
         // --- Events ---
         document.addEventListener('click', (e) => {
+            // Tap neben das offene Menü schließt nur das Menü
+            if (!elMenu.hidden && !e.target.closest('.open-menu')) {
+                setMenu(false);
+                return;
+            }
             // Während des Lesens sind alle Controls inaktiv, also pausiert jeder Tap
-            if (e.target.closest('.controls, .hud button, .progress')) return;
+            if (e.target.closest('.controls, .hud button, .progress, dialog')) return;
             togglePlay();
+        });
+
+        elOpenBtn.addEventListener('click', () => setMenu(elMenu.hidden));
+        // Erst nach dem Klick schließen, damit das Label die Dateiauswahl noch öffnet
+        elMenu.addEventListener('click', () => setTimeout(() => setMenu(false)));
+
+        $('paste-btn').addEventListener('click', () => {
+            elPasteText.value = '';
+            elPasteDialog.showModal();
+            elPasteText.focus();
+        });
+        elPasteClipboard.hidden = !navigator.clipboard?.readText;
+        elPasteClipboard.addEventListener('click', async () => {
+            try {
+                elPasteText.value = await navigator.clipboard.readText();
+            } catch {
+                elPasteText.focus(); // Zugriff verweigert: manuell einfügen
+            }
+        });
+        $('paste-cancel').addEventListener('click', () => elPasteDialog.close());
+        $('paste-read').addEventListener('click', () => {
+            const text = elPasteText.value.trim();
+            if (!text) {
+                elPasteText.focus();
+                return;
+            }
+            elPasteDialog.close();
+            openText(text);
         });
 
         elRewind.addEventListener('click', rewindSentence);
 
         elFileInput.addEventListener('change', () => {
             const file = elFileInput.files[0];
+            elFileInput.value = ''; // dieselbe Datei soll erneut auswählbar sein
             if (file) openFile(file);
         });
 
@@ -797,7 +981,7 @@
         elProgress.addEventListener('pointercancel', saveProgress);
 
         document.addEventListener('keydown', (e) => {
-            if (!doc || e.target.matches('input, button')) return;
+            if (!doc || elPasteDialog.open || e.target.matches('input, button, textarea')) return;
             const actions = {
                 ' ': togglePlay,
                 ArrowLeft: rewindSentence,

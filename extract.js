@@ -1,4 +1,4 @@
-// Argon – Textextraktion direkt im Browser: EPUB/PDF → Absätze → flaches Wort-Array.
+// Fastreading – Textextraktion direkt im Browser: EPUB, PDF, DOCX, HTML, TXT → Absätze → Wort-Array.
 // Alles läuft lokal auf dem Gerät, Bücher werden nirgendwohin hochgeladen.
 
 const PDFJS_URL = new URL('./vendor/pdfjs/pdf.min.js', import.meta.url).href;
@@ -124,12 +124,49 @@ function pageBlocks(items) {
                 continue;
             }
             // flowEnd: Block endet am Spaltenende, nicht vor einem Leerraum
-            blocks.push({ text: block.lines.join('\n'), flowEnd: gap <= 0 });
+            blocks.push({ text: block.lines.join('\n'), size: block.size, flowEnd: gap <= 0 });
         }
-        block = { lines: [text], last: ln, left: ln.x, gap: null };
+        block = { lines: [text], last: ln, left: ln.x, size: ln.size, gap: null };
     }
-    if (block) blocks.push({ text: block.lines.join('\n'), flowEnd: true });
+    if (block) blocks.push({ text: block.lines.join('\n'), size: block.size, flowEnd: true });
     return blocks;
+}
+
+const SMALL_TEXT = 0.88;
+const LETTER_G = /\p{L}/gu;
+
+function letterRatio(text) {
+    const visible = text.replace(/\s/g, '').length;
+    return visible ? (text.match(LETTER_G)?.length ?? 0) / visible : 0;
+}
+
+// Überspringt Text, der zu Abbildungen gehört, statt zum Fließtext: Achsenbeschriftungen,
+// Zahlenkolonnen, kleine Bildunterschriften und Fußnoten am Seitenende
+function dropFigureText(pages) {
+    // Fließtext-Schriftgröße = die Größe, in der die meisten Zeichen stehen
+    const charsBySize = new Map();
+    for (const block of pages.flat()) {
+        const key = Math.round(block.size * 2) / 2;
+        charsBySize.set(key, (charsBySize.get(key) || 0) + block.text.length);
+    }
+    const bodySize = [...charsBySize].reduce((best, entry) => (entry[1] > best[1] ? entry : best), [0, -1])[0];
+
+    return pages.map((blocks) => {
+        const lastBody = blocks.findLastIndex((b) => b.size >= bodySize * SMALL_TEXT);
+        const kept = [];
+        blocks.forEach((block, i) => {
+            const small = block.size < bodySize * SMALL_TEXT;
+            const sparse = block.text.length < 40 && letterRatio(block.text) < 0.5;
+            const footnote = small && lastBody >= 0 && i > lastBody;
+            if (sparse || footnote || (small && block.text.length < 80)) {
+                // Spaltenende-Markierung an den vorigen Block weitergeben
+                if (block.flowEnd && kept.length) kept[kept.length - 1].flowEnd = true;
+                return;
+            }
+            kept.push(block);
+        });
+        return kept;
+    });
 }
 
 // Seitenzahlen in Kopf-/Fußzeilen unkenntlich machen, damit sie als gleich zählen
@@ -206,13 +243,24 @@ async function extractPdf(buffer, onProgress) {
             pages.push(pageBlocks(content.items));
             page.cleanup();
         }
-        return { title: null, paragraphs: mergePdfBlocks(stripRunningHeads(pages)) };
+        return { title: null, paragraphs: mergePdfBlocks(dropFigureText(stripRunningHeads(pages))) };
     } finally {
         task.destroy();
     }
 }
 
-// --- EPUB ---------------------------------------------------------------------
+// --- ZIP (EPUB & DOCX) -----------------------------------------------------------
+
+// Text dekodieren: UTF-16 per BOM, sonst UTF-8 mit Fallback auf Windows-1252 (alte TXT-Dateien)
+function decodeText(bytes) {
+    if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes);
+    if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes);
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+        return new TextDecoder('windows-1252').decode(bytes);
+    }
+}
 
 // Minimaler ZIP-Leser über das Inhaltsverzeichnis am Dateiende; entpackt wird mit der
 // eingebauten DecompressionStream-API, eine ZIP-Bibliothek ist nicht nötig.
@@ -226,7 +274,7 @@ function openZip(buffer) {
             break;
         }
     }
-    if (eocd < 0) throw new ExtractionError('Keine gültige EPUB-Datei (ZIP beschädigt).');
+    if (eocd < 0) throw new ExtractionError('Die Datei ist beschädigt (ZIP-Struktur fehlt).');
 
     const utf8 = new TextDecoder();
     const entries = new Map();
@@ -249,7 +297,7 @@ function openZip(buffer) {
         const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
         const data = bytes.subarray(start, start + entry.size);
         if (entry.method === 0) return data;
-        if (entry.method !== 8) throw new ExtractionError('Nicht unterstützte ZIP-Kompression im EPUB.');
+        if (entry.method !== 8) throw new ExtractionError('Nicht unterstützte ZIP-Kompression.');
         const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
         return new Uint8Array(await new Response(stream).arrayBuffer());
     }
@@ -258,54 +306,74 @@ function openZip(buffer) {
         has: (name) => entries.has(name),
         async text(name) {
             const data = await read(name);
-            if (!data) return null;
-            if (data[0] === 0xff && data[1] === 0xfe) return new TextDecoder('utf-16le').decode(data);
-            if (data[0] === 0xfe && data[1] === 0xff) return new TextDecoder('utf-16be').decode(data);
-            return utf8.decode(data);
+            return data && decodeText(data);
         },
     };
 }
 
-const DC_NS = 'http://purl.org/dc/elements/1.1/';
+// --- HTML (EPUB-Kapitel & gespeicherte Webseiten) ------------------------------------
+
 const BLOCK_TAGS = [
     'address', 'article', 'aside', 'blockquote', 'dd', 'div', 'dl', 'dt',
-    'figcaption', 'figure', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'header', 'hr', 'li', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th',
-    'tr', 'ul',
+    'figure', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr',
+    'li', 'main', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'ul',
+].join(',');
+// Alles ohne lesbaren Fließtext: Medien samt Fallback-Texten, Animationen, interaktive
+// Elemente, versteckte Inhalte und Bildunterschriften
+const SKIPPED_ELEMENTS = [
+    'script', 'style', 'noscript', 'template', 'svg', 'canvas', 'video', 'audio',
+    'object', 'embed', 'iframe', 'button', 'select', 'textarea', 'figcaption',
+    '[hidden]', '[aria-hidden="true"]',
 ].join(',');
 const NOTE_MARKUP = /\b(?:doc-)?(?:noteref|footnotes?|endnotes?|rearnotes?)\b/;
 const PARAGRAPH_MARK = '\u001e';
 
 const parseXml = (text) => new DOMParser().parseFromString(text, 'application/xml');
 
+function elementParagraphs(root) {
+    root.querySelectorAll(SKIPPED_ELEMENTS).forEach((el) => el.remove());
+    // Fußnotenverweise und -texte würden den Lesefluss unterbrechen
+    for (const el of root.querySelectorAll('*')) {
+        const semantics = `${el.getAttribute('epub:type') || ''} ${el.getAttribute('role') || ''}`;
+        if (NOTE_MARKUP.test(semantics) || (el.localName === 'sup' && el.querySelector('a'))) el.remove();
+    }
+    root.querySelectorAll('br').forEach((br) => br.replaceWith(' '));
+    for (const el of root.querySelectorAll(BLOCK_TAGS)) {
+        el.before(PARAGRAPH_MARK);
+        el.after(PARAGRAPH_MARK);
+    }
+    // textContent ohne Separator, damit Initialen wie <span>W</span>ort ein Wort bleiben
+    return root.textContent.split(PARAGRAPH_MARK);
+}
+
+function parseHtml(markup) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(markup, 'application/xhtml+xml');
+    return doc.getElementsByTagName('parsererror').length ? parser.parseFromString(markup, 'text/html') : doc;
+}
+
+function extractHtml(markup) {
+    const doc = parseHtml(markup);
+    // Gespeicherte Webseite: möglichst nur den Artikel, ohne Navigation und Seitenleisten
+    let root = doc.querySelector('article') || doc.querySelector('main');
+    if (!root) {
+        root = doc.querySelector('body') || doc.documentElement;
+        root.querySelectorAll('nav, header, footer, aside, form').forEach((el) => el.remove());
+    }
+    root.querySelectorAll('nav, aside').forEach((el) => el.remove());
+    return { title: doc.querySelector('title')?.textContent.trim() || null, paragraphs: elementParagraphs(root) };
+}
+
+// --- EPUB -----------------------------------------------------------------------
+
+const DC_NS = 'http://purl.org/dc/elements/1.1/';
+
 // Pfad aus dem OPF relativ zum OPF-Ordner auflösen ("../Text/Kapitel%201.xhtml")
 function resolvePath(baseDir, href) {
     return decodeURIComponent(new URL(href, `https://epub.invalid/${baseDir}`).pathname.slice(1));
 }
 
-function htmlParagraphs(markup) {
-    const parser = new DOMParser();
-    let doc = parser.parseFromString(markup, 'application/xhtml+xml');
-    if (doc.getElementsByTagName('parsererror').length) doc = parser.parseFromString(markup, 'text/html');
-    const body = doc.querySelector('body') || doc.documentElement;
-
-    body.querySelectorAll('script, style, noscript, svg').forEach((el) => el.remove());
-    // Fußnotenverweise und -texte würden den Lesefluss unterbrechen
-    for (const el of body.querySelectorAll('*')) {
-        const semantics = `${el.getAttribute('epub:type') || ''} ${el.getAttribute('role') || ''}`;
-        if (NOTE_MARKUP.test(semantics) || (el.localName === 'sup' && el.querySelector('a'))) el.remove();
-    }
-    body.querySelectorAll('br').forEach((br) => br.replaceWith(' '));
-    for (const el of body.querySelectorAll(BLOCK_TAGS)) {
-        el.before(PARAGRAPH_MARK);
-        el.after(PARAGRAPH_MARK);
-    }
-    // textContent ohne Separator, damit Initialen wie <span>W</span>ort ein Wort bleiben
-    return body.textContent.split(PARAGRAPH_MARK);
-}
-
-async function extractEpub(buffer, onProgress) {
-    const zip = openZip(buffer);
+async function extractEpub(zip, onProgress) {
     const container = await zip.text('META-INF/container.xml');
     const rootPath = container && parseXml(container).querySelector('rootfile')?.getAttribute('full-path');
     const opfText = rootPath && await zip.text(rootPath);
@@ -344,50 +412,124 @@ async function extractEpub(buffer, onProgress) {
     for (const [n, item] of spine.entries()) {
         onProgress?.(`Lese Kapitel ${n + 1} / ${spine.length} …`);
         const markup = await zip.text(item.path);
-        if (markup) for (const paragraph of htmlParagraphs(markup)) paragraphs.push(paragraph);
+        if (!markup) continue;
+        const doc = parseHtml(markup);
+        for (const paragraph of elementParagraphs(doc.querySelector('body') || doc.documentElement)) {
+            paragraphs.push(paragraph);
+        }
     }
     const title = opf.getElementsByTagNameNS(DC_NS, 'title')[0]?.textContent.trim();
     return { title: title || null, paragraphs };
 }
 
+// --- Word (DOCX) -------------------------------------------------------------------
+
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+// Nächster Absatz (w:p) über einem Knoten; null für Ersatzinhalte (mc:Fallback = Duplikat)
+function owningParagraph(node) {
+    for (let el = node.parentElement; el; el = el.parentElement) {
+        if (el.localName === 'Fallback') return null;
+        if (el.localName === 'p' && el.namespaceURI === W_NS) return el;
+    }
+    return null;
+}
+
+async function extractDocx(zip) {
+    const xml = parseXml(await zip.text('word/document.xml'));
+    const paragraphs = [];
+    for (const p of xml.getElementsByTagNameNS(W_NS, 'p')) {
+        let text = '';
+        for (const node of p.getElementsByTagNameNS(W_NS, '*')) {
+            if (owningParagraph(node) !== p) continue; // Textfelder bekommen eigene Absätze
+            if (node.localName === 't') text += node.textContent;
+            else if (node.localName === 'tab' || node.localName === 'br' || node.localName === 'cr') text += ' ';
+            else if (node.localName === 'noBreakHyphen') text += '-';
+        }
+        paragraphs.push(text);
+    }
+    return { title: null, paragraphs };
+}
+
+// --- Reiner Text ---------------------------------------------------------------------
+
+const GUTENBERG_START = /\*\*\*\s*START OF (?:THE|THIS) PROJECT GUTENBERG[^\n]*\n/i;
+const GUTENBERG_END = /\*\*\*\s*END OF (?:THE|THIS) PROJECT GUTENBERG/i;
+
+function textParagraphs(text) {
+    // Lizenztexte von Project Gutenberg vor und nach dem eigentlichen Buch weglassen
+    const start = text.match(GUTENBERG_START);
+    if (start) text = text.slice(start.index + start[0].length);
+    const end = text.search(GUTENBERG_END);
+    if (end >= 0) text = text.slice(0, end);
+
+    text = text.replace(/\r\n?/g, '\n');
+    // Absätze durch Leerzeilen getrennt (Bücher mit festem Zeilenumbruch) oder eine Zeile pro Absatz
+    return /\n[ \t]*\n/.test(text) ? text.split(/\n[ \t]*\n/) : text.split('\n');
+}
+
 // --- Einstieg -------------------------------------------------------------------
 
-async function fingerprint(buffer, file) {
-    if (!crypto.subtle) return `${file.name}:${file.size}`; // nur ohne HTTPS (lokale Tests)
+async function fingerprint(buffer, fallback) {
+    if (!crypto.subtle) return fallback; // nur ohne HTTPS (lokale Tests)
     const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
     return Array.from(hash.slice(0, 8), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function detectFormat(buffer) {
-    const head = new Uint8Array(buffer, 0, Math.min(5, buffer.byteLength));
-    if (String.fromCharCode(...head) === '%PDF-') return 'pdf';
-    if (head[0] === 0x50 && head[1] === 0x4b) return 'epub';
-    return null;
+const ascii = (bytes, start, end) => String.fromCharCode(...bytes.subarray(start, end));
+
+async function extract(buffer, name, onProgress) {
+    const bytes = new Uint8Array(buffer);
+    if (ascii(bytes, 0, 5) === '%PDF-') return extractPdf(buffer, onProgress);
+    if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
+        const zip = openZip(buffer);
+        if (zip.has('META-INF/container.xml')) return extractEpub(zip, onProgress);
+        if (zip.has('word/document.xml')) return extractDocx(zip);
+        throw new ExtractionError('Diese ZIP-Datei ist weder ein EPUB noch ein Word-Dokument.');
+    }
+    if (['BOOKMOBI', 'TEXtREAd'].includes(ascii(bytes, 60, 68))) {
+        throw new ExtractionError('Kindle-Formate (MOBI/AZW) werden nicht unterstützt – lade das Buch als EPUB herunter.');
+    }
+    if (ascii(bytes, 0, 8) === 'AT&TFORM') {
+        throw new ExtractionError('DjVu-Dateien sind eingescannte Seiten und enthalten keinen lesbaren Text.');
+    }
+
+    if (/\.(?:epub|pdf|docx)$/i.test(name)) {
+        throw new ExtractionError('Die Datei ist beschädigt oder hat die falsche Endung.');
+    }
+    const hasBom = (bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff);
+    if (!hasBom && bytes.subarray(0, 4096).includes(0)) {
+        throw new ExtractionError('Dateiformat nicht unterstützt. Möglich sind EPUB, PDF, DOCX, TXT und HTML.');
+    }
+    const text = decodeText(bytes);
+    if (/\.x?html?$/i.test(name) || /^\s*<(?:!doctype html|html|\?xml)/i.test(text)) return extractHtml(text);
+    return { title: null, paragraphs: textParagraphs(text) };
+}
+
+function finish(id, title, paragraphs) {
+    const { words, paragraphEnds } = buildDocument(paragraphs);
+    if (!words.length) {
+        throw new ExtractionError('Kein lesbarer Text gefunden (gescanntes PDF oder DRM-geschütztes E-Book?).');
+    }
+    return { id, filename: title || words.slice(0, 5).join(' ') + (words.length > 5 ? ' …' : ''), words, paragraphEnds };
 }
 
 export async function extractDocument(file, onProgress) {
     const buffer = await file.arrayBuffer();
-    const format = detectFormat(buffer);
-    if (!format) throw new ExtractionError('Nur EPUB- und PDF-Dateien werden unterstützt.');
     // Vor dem Parsen hashen: pdf.js übernimmt den Puffer in seinen Worker
-    const id = await fingerprint(buffer, file);
-
+    const id = await fingerprint(buffer, `${file.name}:${file.size}`);
     let result;
     try {
-        result = format === 'pdf' ? await extractPdf(buffer, onProgress) : await extractEpub(buffer, onProgress);
+        result = await extract(buffer, file.name, onProgress);
     } catch (err) {
         if (err instanceof ExtractionError) throw err;
         throw new ExtractionError(`Datei konnte nicht gelesen werden: ${err.message}`);
     }
+    return finish(id, result.title || file.name.replace(/\.[^.]+$/, ''), result.paragraphs);
+}
 
-    const { words, paragraphEnds } = buildDocument(result.paragraphs);
-    if (!words.length) {
-        throw new ExtractionError('Kein lesbarer Text gefunden (gescanntes PDF oder DRM-geschütztes E-Book?).');
-    }
-    return {
-        id,
-        filename: result.title || file.name.replace(/\.[^.]+$/, ''),
-        words,
-        paragraphEnds,
-    };
+// Eingefügter Text (z. B. ein Artikel aus der Zwischenablage); Titel = die ersten Wörter
+export async function documentFromText(text) {
+    const id = await fingerprint(new TextEncoder().encode(text).buffer, `text:${text.length}`);
+    return finish(id, null, textParagraphs(text));
 }

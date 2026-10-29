@@ -1,6 +1,6 @@
 {
-  "name": "Argon RSVP",
-  "short_name": "Argon",
+  "name": "Fastreading",
+  "short_name": "Fastreading",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
