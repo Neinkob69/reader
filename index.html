@@ -12,35 +12,62 @@
     <link rel="apple-touch-icon" href="icons/icon-180.png">
     <title>Fastreading</title>
     <script>
-        // Theme vor dem ersten Paint setzen, damit nichts aufblitzt
+        // Farbschema vor dem ersten Paint setzen, damit nichts aufblitzt
         (() => {
             let theme = null;
             try { theme = localStorage.getItem('fastreading.theme'); } catch {}
-            if (theme !== 'light' && theme !== 'dark') {
+            if (!['dark', 'black', 'light', 'sepia'].includes(theme)) {
                 theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
             }
             document.documentElement.dataset.theme = theme;
         })();
     </script>
     <style>
+        @font-face {
+            font-family: "Atkinson Hyperlegible";
+            font-weight: 400;
+            font-display: swap;
+            src: url("vendor/fonts/atkinson-hyperlegible-latin-400-normal.woff2") format("woff2");
+        }
+
+        @font-face {
+            font-family: "Atkinson Hyperlegible";
+            font-weight: 700;
+            font-display: swap;
+            src: url("vendor/fonts/atkinson-hyperlegible-latin-700-normal.woff2") format("woff2");
+        }
+
         :root {
-            --word-size: clamp(2.25rem, min(11vw, 12dvh), 5rem);
+            --word-scale: 1;
+            --word-size: calc(clamp(2.25rem, min(11vw, 12dvh), 5rem) * var(--word-scale));
             --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            --reading-font: var(--font);
+            --reading-weight: 600;
             --safe-top: env(safe-area-inset-top, 0px);
             --safe-right: env(safe-area-inset-right, 0px);
             --safe-bottom: env(safe-area-inset-bottom, 0px);
             --safe-left: env(safe-area-inset-left, 0px);
+            --orp: var(--orp-red);
         }
 
         :root[data-theme="dark"] {
             color-scheme: dark;
             --bg: #09090b;
             --fg: #f4f4f5;
-            --muted: #71717a;
+            --muted: #85858e;
             --faint: #3f3f46;
             --border: #27272a;
             --raised: #18181b;
-            --orp: #ef4444;
+        }
+
+        :root[data-theme="black"] {
+            color-scheme: dark;
+            --bg: #000000;
+            --fg: #e4e4e7;
+            --muted: #85858e;
+            --faint: #3f3f46;
+            --border: #1f1f23;
+            --raised: #111113;
         }
 
         :root[data-theme="light"] {
@@ -51,8 +78,41 @@
             --faint: #d4d4d8;
             --border: #e4e4e7;
             --raised: #ffffff;
-            --orp: #dc2626;
         }
+
+        :root[data-theme="sepia"] {
+            color-scheme: light;
+            --bg: #f4ecd8;
+            --fg: #3b2f22;
+            --muted: #6b5b44;
+            --faint: #d9c9a6;
+            --border: #e4d6b8;
+            --raised: #fbf6ea;
+        }
+
+        /* Fokusfarben, je nach Hintergrund eine hellere oder dunklere Stufe */
+        :root[data-theme="dark"],
+        :root[data-theme="black"] {
+            --orp-red: #ef4444;
+            --orp-orange: #f97316;
+            --orp-blue: #60a5fa;
+            --orp-green: #4ade80;
+            --orp-purple: #c084fc;
+        }
+
+        :root[data-theme="light"],
+        :root[data-theme="sepia"] {
+            --orp-red: #dc2626;
+            --orp-orange: #c2410c;
+            --orp-blue: #2563eb;
+            --orp-green: #15803d;
+            --orp-purple: #9333ea;
+        }
+
+        :root[data-orp="orange"] { --orp: var(--orp-orange); }
+        :root[data-orp="blue"] { --orp: var(--orp-blue); }
+        :root[data-orp="green"] { --orp: var(--orp-green); }
+        :root[data-orp="purple"] { --orp: var(--orp-purple); }
 
         * {
             box-sizing: border-box;
@@ -83,6 +143,11 @@
             /* iOS feuert click auf beliebigen Flächen nur mit cursor: pointer */
             cursor: pointer;
             transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        button {
+            font: inherit;
+            color: inherit;
         }
 
         /* --- Controls oben --- */
@@ -120,6 +185,12 @@
         .wpm input:focus-visible {
             outline: 2px solid var(--orp);
             outline-offset: 2px;
+        }
+
+        .btn-primary {
+            border-color: var(--orp);
+            background: var(--orp);
+            color: #fff;
         }
 
         .file-input {
@@ -182,61 +253,6 @@
             font-weight: 400;
         }
 
-        /* --- Text einfügen --- */
-        .paste-dialog {
-            width: min(560px, calc(100vw - 32px));
-            margin: calc(var(--safe-top) + 16px) auto auto;
-            padding: 16px;
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            background: var(--raised);
-            color: var(--fg);
-            cursor: default;
-        }
-
-        .paste-dialog::backdrop {
-            background: rgba(0, 0, 0, 0.5);
-        }
-
-        .paste-dialog h2 {
-            margin-bottom: 10px;
-            font-size: 1rem;
-            font-weight: 600;
-        }
-
-        .paste-dialog textarea {
-            display: block;
-            width: 100%;
-            height: 40dvh;
-            padding: 10px 12px;
-            resize: none;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            background: var(--bg);
-            color: var(--fg);
-            /* mindestens 16px, sonst zoomt iOS beim Antippen hinein */
-            font: 1rem/1.45 var(--font);
-            user-select: text;
-            -webkit-user-select: text;
-            -webkit-touch-callout: default;
-        }
-
-        .dialog-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 12px;
-        }
-
-        .dialog-actions .spacer {
-            flex: 1;
-        }
-
-        .btn-primary {
-            border-color: var(--orp);
-            background: var(--orp);
-            color: #fff;
-        }
-
         .wpm {
             flex: 1;
             display: flex;
@@ -267,6 +283,8 @@
             align-items: center;
             justify-content: center;
             padding: 0 calc(var(--safe-right) + 12px) 0 calc(var(--safe-left) + 12px);
+            /* Wischgesten selbst auswerten statt den Browser scrollen/zoomen zu lassen */
+            touch-action: none;
         }
 
         .reticle {
@@ -291,6 +309,11 @@
         .reticle::before { top: 0; }
         .reticle::after { bottom: 0; }
 
+        body.no-guides .reticle::before,
+        body.no-guides .reticle::after {
+            display: none;
+        }
+
         /*
          * 3-Spalten-Layout: links und rechts gleich breit (flex: 1 1 0), der ORP-Buchstabe
          * dazwischen. Damit steht der rote Buchstabe immer exakt in der Mitte – auch mit
@@ -300,7 +323,7 @@
             display: flex;
             align-items: center;
             height: calc(var(--word-size) * 1.3);
-            font: 600 calc(var(--word-size) * var(--fit, 1)) / 1.3 var(--font);
+            font: var(--reading-weight) calc(var(--word-size) * var(--fit, 1)) / 1.3 var(--reading-font);
             letter-spacing: -0.01em;
             white-space: pre;
         }
@@ -334,6 +357,83 @@
             transition: opacity 0.3s ease;
         }
 
+        /* --- Kontext beim Pausieren: der Absatz rund um das aktuelle Wort --- */
+        .context {
+            position: absolute;
+            top: calc(50% + var(--word-size) * 0.65 + 34px);
+            bottom: 76px;
+            left: calc(var(--safe-left) + 20px);
+            right: calc(var(--safe-right) + 20px);
+            max-width: 560px;
+            margin: 0 auto;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
+            cursor: default;
+            transition: opacity 0.3s ease;
+        }
+
+        .context-hint {
+            margin-bottom: 8px;
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+
+        .context-text {
+            color: var(--muted);
+            font: 400 0.9375rem/1.6 var(--reading-font);
+        }
+
+        .context-text span {
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .context-text .is-current {
+            color: var(--fg);
+            box-shadow: inset 0 -2px 0 var(--orp);
+        }
+
+        @media (min-height: 521px) {
+            body.has-context .hint {
+                display: none;
+            }
+        }
+
+        /* Querformat: zu wenig Platz für den Kontext */
+        @media (max-height: 520px) {
+            .context {
+                display: none;
+            }
+        }
+
+        .toast {
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            z-index: 10;
+            max-width: calc(100% - 32px);
+            padding: 8px 14px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--raised);
+            color: var(--fg);
+            font: 500 0.875rem/1.3 var(--font);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            opacity: 0;
+            transform: translateX(-50%);
+            transition: opacity 0.2s ease;
+            pointer-events: none;
+        }
+
+        .toast.is-visible {
+            opacity: 1;
+        }
+
+        /* --- Statusleiste unten --- */
         .hud {
             position: absolute;
             left: 0;
@@ -364,8 +464,6 @@
             border: 0;
             border-radius: 8px;
             background: transparent;
-            color: inherit;
-            font: inherit;
             text-align: center;
             cursor: pointer;
         }
@@ -378,21 +476,36 @@
             background: var(--border);
         }
 
+        #doc-name {
+            display: block;
+            overflow: hidden;
+            color: var(--fg);
+            font-weight: 500;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .hud-center:not(:disabled) #doc-name::before {
             content: "☰ ";
             color: var(--muted);
         }
 
-        .hud-center span {
-            display: block;
+        .status-line {
+            display: flex;
+            justify-content: center;
+            min-width: 0;
+        }
+
+        #status-text {
+            min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
-        #doc-name {
-            color: var(--fg);
-            font-weight: 500;
+        #chapter-time {
+            flex: none;
+            white-space: pre;
         }
 
         /* Fehlermeldungen sollen vollständig lesbar sein */
@@ -403,90 +516,6 @@
         .hud-right {
             min-width: 7em;
             text-align: right;
-        }
-
-        /* --- Kapitelansicht --- */
-        .toc-dialog {
-            width: min(560px, calc(100vw - 32px));
-            max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
-            margin: calc(var(--safe-top) + 16px) auto auto;
-            padding: 0;
-            overflow: hidden;
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            background: var(--raised);
-            color: var(--fg);
-            cursor: default;
-        }
-
-        .toc-dialog[open] {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .toc-dialog::backdrop {
-            background: rgba(0, 0, 0, 0.5);
-        }
-
-        .sheet-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 10px 10px 10px 16px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .sheet-head h2 {
-            font-size: 1rem;
-            font-weight: 600;
-        }
-
-        .toc-list {
-            flex: 1;
-            min-height: 0;
-            padding: 6px;
-            overflow-y: auto;
-            overscroll-behavior: contain;
-            list-style: none;
-        }
-
-        .toc-item {
-            display: flex;
-            align-items: baseline;
-            gap: 12px;
-            width: 100%;
-            padding: 10px 12px 10px calc(12px + var(--level, 0) * 16px);
-            border: 0;
-            border-radius: 9px;
-            background: transparent;
-            color: var(--fg);
-            font: 400 0.9375rem/1.35 var(--font);
-            text-align: left;
-            cursor: pointer;
-        }
-
-        .toc-item:active {
-            background: var(--border);
-        }
-
-        .toc-title {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .toc-pos {
-            color: var(--muted);
-            font-size: 0.75rem;
-            font-variant-numeric: tabular-nums;
-        }
-
-        .toc-item.is-read .toc-title {
-            color: var(--muted);
-        }
-
-        .toc-item.is-current {
-            color: var(--orp);
-            font-weight: 600;
         }
 
         .hud-right strong {
@@ -525,7 +554,8 @@
         /* --- Lesemodus: alles außer dem Wort tritt zurück; jeder Tap pausiert --- */
         body.is-playing .controls,
         body.is-playing .hud,
-        body.is-playing .hint {
+        body.is-playing .hint,
+        body.is-playing .context {
             opacity: 0;
             pointer-events: none;
         }
@@ -533,6 +563,543 @@
         body.is-playing .progress {
             opacity: 0.35;
             pointer-events: none;
+        }
+
+        /* --- Dialoge --- */
+        dialog {
+            color: var(--fg);
+            cursor: default;
+        }
+
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .sheet {
+            width: min(560px, calc(100vw - 32px));
+            max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
+            margin: calc(var(--safe-top) + 16px) auto auto;
+            padding: 0;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--raised);
+        }
+
+        .sheet[open] {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sheet-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 10px 10px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sheet-head h2 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .sheet-body {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        .sheet-note {
+            padding: 12px 16px 16px;
+            color: var(--muted);
+            font-size: 0.75rem;
+            line-height: 1.5;
+        }
+
+        .empty {
+            padding: 28px 20px;
+            color: var(--muted);
+            font-size: 0.875rem;
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            padding: 3px;
+            border-radius: 10px;
+            background: var(--border);
+        }
+
+        .tabs button {
+            min-height: 32px;
+            padding: 0 12px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--muted);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .tabs button[aria-selected="true"] {
+            background: var(--raised);
+            color: var(--fg);
+        }
+
+        .list {
+            padding: 6px;
+            list-style: none;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .row-main {
+            flex: 1;
+            min-width: 0;
+            padding: 10px 12px;
+            border: 0;
+            border-radius: 9px;
+            background: transparent;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .row-main:active {
+            background: var(--border);
+        }
+
+        .row-title {
+            display: block;
+            overflow: hidden;
+            font-size: 0.9375rem;
+            font-weight: 600;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .row-meta {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .row-bar {
+            display: block;
+            height: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+            border-radius: 2px;
+            background: var(--border);
+        }
+
+        .row-bar > span {
+            display: block;
+            height: 100%;
+            background: var(--orp);
+        }
+
+        .icon-btn {
+            flex: none;
+            min-width: 40px;
+            min-height: 40px;
+            border: 0;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--muted);
+            font-size: 0.9375rem;
+            cursor: pointer;
+        }
+
+        .icon-btn:active {
+            background: var(--border);
+        }
+
+        .is-current .row-title {
+            color: var(--orp);
+        }
+
+        /* Kapitel */
+        .toc-item {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            width: 100%;
+            padding: 10px 12px 10px calc(12px + var(--level, 0) * 16px);
+            border: 0;
+            border-radius: 9px;
+            background: transparent;
+            font: 400 0.9375rem/1.35 var(--font);
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .toc-item:active {
+            background: var(--border);
+        }
+
+        .toc-title {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .toc-pos {
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .toc-item.is-read .toc-title {
+            color: var(--muted);
+        }
+
+        .toc-item.is-current {
+            color: var(--orp);
+            font-weight: 600;
+        }
+
+        /* Lesezeichen */
+        .mark-quote {
+            display: -webkit-box;
+            overflow: hidden;
+            font: 400 0.9375rem/1.45 var(--reading-font);
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 3;
+        }
+
+        .sheet-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            padding: 10px 12px 0;
+        }
+
+        /* --- Text einfügen --- */
+        .paste-dialog {
+            width: min(560px, calc(100vw - 32px));
+            margin: calc(var(--safe-top) + 16px) auto auto;
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--raised);
+        }
+
+        .paste-dialog h2 {
+            margin-bottom: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .paste-dialog textarea {
+            display: block;
+            width: 100%;
+            height: 40dvh;
+            padding: 10px 12px;
+            resize: none;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg);
+            color: var(--fg);
+            /* mindestens 16px, sonst zoomt iOS beim Antippen hinein */
+            font: 1rem/1.45 var(--font);
+            user-select: text;
+            -webkit-user-select: text;
+            -webkit-touch-callout: default;
+        }
+
+        .dialog-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .dialog-actions .spacer {
+            flex: 1;
+        }
+
+        /* --- Einstellungen --- */
+        .preview {
+            flex: none;
+            padding: 6px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg);
+        }
+
+        .preview .word {
+            --word-size: calc(clamp(1.75rem, 8vw, 3rem) * var(--word-scale));
+        }
+
+        .settings-group {
+            padding: 4px 16px 8px;
+        }
+
+        .settings-group h3 {
+            margin: 14px 0 4px;
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .setting {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9375rem;
+        }
+
+        .setting:last-child {
+            border-bottom: 0;
+        }
+
+        .setting.stacked {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+        }
+
+        .setting small {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 0.75rem;
+        }
+
+        .segmented {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .segmented button {
+            flex: 1 0 auto;
+            min-height: 36px;
+            padding: 0 10px;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: transparent;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .segmented button[aria-pressed="true"] {
+            border-color: var(--orp);
+            background: color-mix(in srgb, var(--orp) 14%, transparent);
+        }
+
+        .swatches {
+            display: flex;
+            gap: 12px;
+        }
+
+        .swatches button {
+            width: 32px;
+            height: 32px;
+            border: 0;
+            border-radius: 50%;
+            background: var(--swatch);
+            cursor: pointer;
+        }
+
+        .swatches button[aria-pressed="true"] {
+            box-shadow: 0 0 0 2px var(--raised), 0 0 0 4px var(--fg);
+        }
+
+        .switch {
+            position: relative;
+            flex: none;
+            width: 46px;
+            height: 28px;
+            border-radius: 999px;
+            background: var(--faint);
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            transition: background-color 0.2s ease;
+        }
+
+        .switch::after {
+            content: "";
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s ease;
+        }
+
+        .switch:checked {
+            background: var(--orp);
+        }
+
+        .switch:checked::after {
+            transform: translateX(18px);
+        }
+
+        .range-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .range-row input {
+            flex: 1;
+            min-width: 0;
+            accent-color: var(--orp);
+        }
+
+        .range-row output {
+            min-width: 4.5em;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .gesture-help {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 6px 12px;
+            padding: 10px 0;
+            font-size: 0.875rem;
+        }
+
+        .gesture-help dt {
+            color: var(--muted);
+        }
+
+        /* --- Statistik --- */
+        .tiles {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            padding: 12px;
+        }
+
+        .tile {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .tile-label,
+        .tile-sub {
+            display: block;
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tile-value {
+            display: block;
+            margin: 2px 0;
+            font-size: 1.375rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .chart {
+            padding: 4px 16px 12px;
+        }
+
+        .chart h3 {
+            margin-bottom: 18px;
+            font-size: 0.8125rem;
+            font-weight: 600;
+        }
+
+        .chart-plot {
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 120px;
+            border-bottom: 1px solid var(--faint);
+        }
+
+        .chart-max {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            border-top: 1px solid var(--border);
+            pointer-events: none;
+        }
+
+        .chart-max span {
+            position: absolute;
+            bottom: 2px;
+            left: 0;
+            color: var(--muted);
+            font-size: 0.6875rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .chart-col {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            height: 100%;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .chart-col > span {
+            display: block;
+            width: 100%;
+            max-width: 24px;
+            border-radius: 4px 4px 0 0;
+            background: var(--muted);
+        }
+
+        .chart-col.is-today > span {
+            background: var(--orp);
+        }
+
+        .chart-plot.has-selection .chart-col:not([aria-pressed="true"]) > span {
+            opacity: 0.4;
+        }
+
+        .chart-days {
+            display: flex;
+            gap: 2px;
+            margin-top: 6px;
+        }
+
+        .chart-days span {
+            flex: 1;
+            color: var(--muted);
+            font-size: 0.625rem;
+            text-align: center;
+        }
+
+        .chart-detail {
+            min-height: 1.4em;
+            margin-top: 10px;
+            font-size: 0.8125rem;
+            font-variant-numeric: tabular-nums;
         }
     </style>
 </head>
@@ -544,6 +1111,10 @@
                 <span id="file-label">📄 Öffnen</span>
             </button>
             <div class="menu" id="open-menu" hidden>
+                <button class="menu-item" id="library-btn" type="button">
+                    📚 Bibliothek
+                    <small>Deine Bücher und Lesestatistik</small>
+                </button>
                 <label class="menu-item" for="file-input">
                     📄 Datei öffnen
                     <small>EPUB, PDF, Word, TXT oder HTML</small>
@@ -563,10 +1134,10 @@
             <output id="wpm-display" for="wpm-slider">450 WPM</output>
         </div>
 
-        <button class="btn" id="theme-toggle" type="button" aria-label="Hell/Dunkel wechseln">☀️</button>
+        <button class="btn" id="settings-btn" type="button" aria-label="Einstellungen">⚙️</button>
     </header>
 
-    <main class="stage">
+    <main class="stage" id="stage">
         <div class="reticle">
             <div class="word" id="word" aria-live="off">
                 <span class="side side-left"><span id="w-left">F</span></span>
@@ -577,11 +1148,18 @@
 
         <p class="hint" id="hint">Tippen zum Lesen</p>
 
+        <div class="context" id="context" hidden>
+            <p class="context-hint">Tippen zum Weiterlesen · Wort antippen springt dorthin</p>
+            <p class="context-text" id="context-text"></p>
+        </div>
+
+        <div class="toast" id="toast" role="status"></div>
+
         <div class="hud">
             <button class="btn" id="btn-rewind" type="button" title="Zum vorherigen Satzanfang">↺ Satz</button>
             <button class="hud-center" id="toc-btn" type="button" aria-haspopup="dialog" disabled>
                 <span id="doc-name">–</span>
-                <span id="status-text">Bereit</span>
+                <span class="status-line"><span id="status-text">Bereit</span><span id="chapter-time"></span></span>
             </button>
             <div class="hud-right">
                 <strong id="percent-text">0 %</strong>
@@ -596,12 +1174,165 @@
         </div>
     </footer>
 
-    <dialog class="toc-dialog" id="toc-dialog" aria-labelledby="toc-title">
+    <!-- Buch: Kapitel & Lesezeichen -->
+    <dialog class="sheet" id="book-dialog" aria-label="Kapitel und Lesezeichen">
         <div class="sheet-head">
-            <h2 id="toc-title">Inhalt</h2>
-            <button class="btn" id="toc-close" type="button" aria-label="Schließen">✕</button>
+            <div class="tabs" role="tablist">
+                <button type="button" role="tab" data-tab="chapters" aria-selected="true">Kapitel</button>
+                <button type="button" role="tab" data-tab="marks" aria-selected="false" id="marks-tab">Lesezeichen</button>
+            </div>
+            <button class="btn" type="button" data-close aria-label="Schließen">✕</button>
         </div>
-        <ol class="toc-list" id="toc-list"></ol>
+        <div class="sheet-body" data-panel="chapters">
+            <ol class="list" id="toc-list"></ol>
+        </div>
+        <div class="sheet-body" data-panel="marks" hidden>
+            <div class="sheet-toolbar" id="marks-toolbar">
+                <button class="btn" id="marks-share" type="button">↗ Teilen</button>
+            </div>
+            <ul class="list" id="marks-list"></ul>
+        </div>
+    </dialog>
+
+    <!-- Bibliothek & Statistik -->
+    <dialog class="sheet" id="library-dialog" aria-label="Bibliothek">
+        <div class="sheet-head">
+            <div class="tabs" role="tablist">
+                <button type="button" role="tab" data-tab="books" aria-selected="true">Bücher</button>
+                <button type="button" role="tab" data-tab="stats" aria-selected="false">Statistik</button>
+            </div>
+            <button class="btn" type="button" data-close aria-label="Schließen">✕</button>
+        </div>
+        <div class="sheet-body" data-panel="books">
+            <ul class="list" id="library-list"></ul>
+            <p class="sheet-note" id="library-note"></p>
+        </div>
+        <div class="sheet-body" data-panel="stats" hidden>
+            <div class="tiles" id="stats-tiles"></div>
+            <div class="chart">
+                <h3>Gelesene Wörter pro Tag, letzte 14 Tage</h3>
+                <div class="chart-plot" id="chart-plot"></div>
+                <div class="chart-days" id="chart-days"></div>
+                <p class="chart-detail" id="chart-detail"></p>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Einstellungen -->
+    <dialog class="sheet" id="settings-dialog" aria-labelledby="settings-title">
+        <div class="sheet-head">
+            <h2 id="settings-title">Einstellungen</h2>
+            <button class="btn" type="button" data-close aria-label="Schließen">✕</button>
+        </div>
+        <div class="preview" aria-hidden="true">
+            <div class="word">
+                <span class="side side-left"><span>L</span></span>
+                <span class="orp">e</span>
+                <span class="side side-right"><span>sen</span></span>
+            </div>
+        </div>
+        <div class="sheet-body">
+            <div class="settings-group">
+                <h3>Anzeige</h3>
+                <div class="setting stacked">
+                    <span>Farbschema</span>
+                    <div class="segmented">
+                        <button type="button" data-setting="theme" data-value="auto">Auto</button>
+                        <button type="button" data-setting="theme" data-value="dark">Dunkel</button>
+                        <button type="button" data-setting="theme" data-value="black">Schwarz</button>
+                        <button type="button" data-setting="theme" data-value="light">Hell</button>
+                        <button type="button" data-setting="theme" data-value="sepia">Sepia</button>
+                    </div>
+                </div>
+                <div class="setting stacked">
+                    <span>Schrift</span>
+                    <div class="segmented">
+                        <button type="button" data-setting="font" data-value="system">Standard</button>
+                        <button type="button" data-setting="font" data-value="serif" style="font-family: ui-serif, Georgia, serif">Serif</button>
+                        <button type="button" data-setting="font" data-value="rounded" style="font-family: ui-rounded, system-ui">Rund</button>
+                        <button type="button" data-setting="font" data-value="mono" style="font-family: ui-monospace, Menlo, monospace">Mono</button>
+                        <button type="button" data-setting="font" data-value="legible" style="font-family: 'Atkinson Hyperlegible', system-ui">Hyperlegible</button>
+                    </div>
+                </div>
+                <div class="setting stacked">
+                    <span>Schriftgröße</span>
+                    <div class="range-row">
+                        <input type="range" min="0.7" max="1.5" step="0.05" data-setting="scale" aria-label="Schriftgröße">
+                        <output data-output="scale"></output>
+                    </div>
+                </div>
+                <div class="setting stacked">
+                    <span>Schriftstärke</span>
+                    <div class="segmented">
+                        <button type="button" data-setting="weight" data-value="400">Normal</button>
+                        <button type="button" data-setting="weight" data-value="600">Halbfett</button>
+                        <button type="button" data-setting="weight" data-value="700">Fett</button>
+                    </div>
+                </div>
+                <div class="setting">
+                    <span>Fokusfarbe</span>
+                    <div class="swatches">
+                        <button type="button" data-setting="orp" data-value="red" style="--swatch: var(--orp-red)" aria-label="Rot"></button>
+                        <button type="button" data-setting="orp" data-value="orange" style="--swatch: var(--orp-orange)" aria-label="Orange"></button>
+                        <button type="button" data-setting="orp" data-value="blue" style="--swatch: var(--orp-blue)" aria-label="Blau"></button>
+                        <button type="button" data-setting="orp" data-value="green" style="--swatch: var(--orp-green)" aria-label="Grün"></button>
+                        <button type="button" data-setting="orp" data-value="purple" style="--swatch: var(--orp-purple)" aria-label="Lila"></button>
+                    </div>
+                </div>
+                <label class="setting">
+                    <span>Fokuslinien</span>
+                    <input class="switch" type="checkbox" data-setting="guides">
+                </label>
+                <label class="setting">
+                    <span>Kontext beim Pausieren<small>Zeigt den Absatz um das aktuelle Wort</small></span>
+                    <input class="switch" type="checkbox" data-setting="context">
+                </label>
+            </div>
+
+            <div class="settings-group">
+                <h3>Lesen</h3>
+                <div class="setting stacked">
+                    <span>Wörter pro Anzeige<small>Mehrere kurze Wörter auf einmal, angenehmer bei hohem Tempo</small></span>
+                    <div class="segmented">
+                        <button type="button" data-setting="chunk" data-value="1">1 Wort</button>
+                        <button type="button" data-setting="chunk" data-value="2">bis 2</button>
+                        <button type="button" data-setting="chunk" data-value="3">bis 3</button>
+                    </div>
+                </div>
+                <label class="setting">
+                    <span>Am Kapitelende pausieren</span>
+                    <input class="switch" type="checkbox" data-setting="chapterPause">
+                </label>
+                <label class="setting">
+                    <span>Tempo-Training<small>Steigert das Tempo jede Lese-Minute bis zum Ziel</small></span>
+                    <input class="switch" type="checkbox" data-setting="training">
+                </label>
+                <div class="setting stacked" id="training-options">
+                    <span>Ziel-Tempo</span>
+                    <div class="range-row">
+                        <input type="range" min="250" max="1000" step="25" data-setting="trainingTarget" aria-label="Ziel-Tempo">
+                        <output data-output="trainingTarget"></output>
+                    </div>
+                    <span>Steigerung pro Minute</span>
+                    <div class="segmented">
+                        <button type="button" data-setting="trainingStep" data-value="5">+5 WPM</button>
+                        <button type="button" data-setting="trainingStep" data-value="10">+10 WPM</button>
+                        <button type="button" data-setting="trainingStep" data-value="25">+25 WPM</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <h3>Gesten auf der Lesefläche</h3>
+                <dl class="gesture-help">
+                    <dt>Tippen</dt><dd>Lesen starten / pausieren</dd>
+                    <dt>← →</dt><dd>Wischen: Satz vor / zurück</dd>
+                    <dt>↑ ↓</dt><dd>Wischen: schneller / langsamer</dd>
+                    <dt>Halten</dt><dd>Satz als Lesezeichen speichern</dd>
+                </dl>
+            </div>
+            <p class="sheet-note">Alles bleibt auf diesem Gerät: Bücher, Fortschritt, Lesezeichen und Statistik werden nirgendwohin hochgeladen.</p>
+        </div>
     </dialog>
 
     <dialog class="paste-dialog" id="paste-dialog" aria-labelledby="paste-title">
@@ -610,7 +1341,7 @@
         <div class="dialog-actions">
             <button class="btn" id="paste-clipboard" type="button">📋 Einfügen</button>
             <span class="spacer"></span>
-            <button class="btn" id="paste-cancel" type="button">Abbrechen</button>
+            <button class="btn" type="button" data-close>Abbrechen</button>
             <button class="btn btn-primary" id="paste-read" type="button">Lesen</button>
         </div>
     </dialog>
@@ -622,21 +1353,51 @@
         const KEYS = {
             WPM: 'fastreading.wpm',
             THEME: 'fastreading.theme',
+            SETTINGS: 'fastreading.settings',
             CURRENT_DOC: 'fastreading.currentDoc',
             PROGRESS: 'fastreading.progress',
+            STATS: 'fastreading.stats',
         };
         const WPM_MIN = 200;
         const WPM_MAX = 1000;
         const MIN_FIT = 0.35;        // kleinste Schriftskalierung für extrem lange Wörter
         const FIT_PADDING = 6;       // px Luft zum Bildschirmrand
         const RAMP = [1.8, 1.5, 1.25, 1.1]; // sanfter Anlauf nach jedem Start
-        const SAVE_INTERVAL = 2000;  // ms zwischen Fortschritts-Speicherungen beim Lesen
-        const MAX_PROGRESS_ENTRIES = 50;
+        const SAVE_INTERVAL = 2000;  // ms zwischen Speicherungen beim Lesen
+        const MAX_PROGRESS_ENTRIES = 500;
+        const CONTEXT_WORDS = 45;    // Wörter vor/nach dem aktuellen im Kontext
+        const CHUNK_MAX_CHARS = 16;  // längste Wortgruppe im Chunk-Modus
+        const SWIPE_MIN = 45;        // px bis eine Bewegung als Wischen zählt
+        const LONG_PRESS = 550;      // ms bis Halten als Lesezeichen zählt
+        const GESTURE_CLICK_WINDOW = 400; // ms, in denen der Klick am Gestenende ignoriert wird
+        const STATS_DAYS = 14;
+
+        const DEFAULT_SETTINGS = {
+            font: 'system',
+            scale: 1,
+            weight: 600,
+            orp: 'red',
+            guides: true,
+            context: true,
+            chunk: 1,
+            chapterPause: false,
+            training: false,
+            trainingTarget: 600,
+            trainingStep: 10,
+        };
+        const FONTS = {
+            system: 'var(--font)',
+            serif: 'ui-serif, "New York", Georgia, "Times New Roman", serif',
+            rounded: 'ui-rounded, "SF Pro Rounded", var(--font)',
+            mono: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+            legible: '"Atkinson Hyperlegible", var(--font)',
+        };
 
         const DEMO_TEXT = [
             'Willkommen bei Fastreading.',
             'Tippe irgendwo auf den Bildschirm, um zu starten, und noch einmal, um zu pausieren. Dein Blick bleibt einfach auf dem roten Buchstaben – die Wörter kommen zu dir.',
             'Über „Öffnen“ lädst du ein Buch als EPUB, PDF, Word- oder Textdatei – oder fügst einfach einen kopierten Artikel ein. Daneben stellst du die Geschwindigkeit zwischen 200 und 1000 Wörtern pro Minute ein. Satzzeichen, Absätze und lange Wörter wie Donaudampfschifffahrtsgesellschaft bekommen automatisch etwas mehr Zeit.',
+            'Wische nach links oder rechts, um einen Satz vor oder zurück zu springen, und nach oben oder unten für mehr oder weniger Tempo. Hältst du den Finger auf dem Text, wird der aktuelle Satz als Lesezeichen gespeichert.',
             'Alles passiert direkt auf deinem iPhone – deine Bücher verlassen nie das Gerät.',
             'Der Balken unten zeigt, wie viel du schon geschafft hast. Tippe oder ziehe darauf, um zu springen – oder tippe bei einem Buch auf den Titel, um direkt zu einem Kapitel zu gehen. Viel Spaß beim Lesen!',
         ];
@@ -647,46 +1408,38 @@
         const elLeft = $('w-left');
         const elOrp = $('w-orp');
         const elRight = $('w-right');
+        const elStage = $('stage');
+        const elContext = $('context');
+        const elContextText = $('context-text');
+        const elToast = $('toast');
         const elFileInput = $('file-input');
         const elFileLabel = $('file-label');
         const elOpenBtn = $('open-btn');
         const elMenu = $('open-menu');
-        const elPasteDialog = $('paste-dialog');
-        const elPasteText = $('paste-text');
-        const elPasteClipboard = $('paste-clipboard');
         const elWpmSlider = $('wpm-slider');
         const elWpmDisplay = $('wpm-display');
-        const elThemeToggle = $('theme-toggle');
         const elThemeColor = document.querySelector('meta[name="theme-color"]');
-        const elHint = $('hint');
         const elRewind = $('btn-rewind');
         const elDocName = $('doc-name');
         const elStatus = $('status-text');
+        const elChapterTime = $('chapter-time');
         const elPercent = $('percent-text');
         const elRemaining = $('remaining-text');
         const elTocBtn = $('toc-btn');
-        const elTocDialog = $('toc-dialog');
-        const elTocList = $('toc-list');
         const elProgress = $('progress');
         const elProgressFill = $('progress-fill');
+        const elBookDialog = $('book-dialog');
+        const elTocList = $('toc-list');
+        const elMarksList = $('marks-list');
+        const elMarksTab = $('marks-tab');
+        const elLibraryDialog = $('library-dialog');
+        const elLibraryList = $('library-list');
+        const elSettingsDialog = $('settings-dialog');
+        const elPasteDialog = $('paste-dialog');
+        const elPasteText = $('paste-text');
+        const elPasteClipboard = $('paste-clipboard');
 
         const numberFormat = new Intl.NumberFormat('de-DE');
-
-        // --- Zustand ---
-        let doc = null;           // { id, filename, words, paragraphEnds }
-        let weights = null;       // Float32Array: Zeitfaktor je Wort (Pacing)
-        let weightSums = null;    // Float64Array: Präfixsummen für die Restzeit
-        let boundaries = null;    // Uint8Array: 1 = letztes Wort eines Satzes/Absatzes
-        let chapterOrder = [];    // Kapitel nach Wortposition sortiert
-        let index = 0;
-        let wpm = 450;
-        let playing = false;
-        let rafId = 0;
-        let deadline = 0;         // Zeitpunkt, an dem das aktuelle Wort wechselt
-        let rampStep = 0;
-        let wakeLock = null;
-        let lastSave = 0;
-        let progress = loadProgress();
 
         // --- Storage-Helfer (Privatmodus/volle Quota dürfen nie die App brechen) ---
         const storage = {
@@ -696,15 +1449,136 @@
             set(key, value) {
                 try { localStorage.setItem(key, value); } catch {}
             },
+            remove(key) {
+                try { localStorage.removeItem(key); } catch {}
+            },
+            json(key, fallback) {
+                try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+            },
         };
 
-        function loadProgress() {
-            try {
-                return JSON.parse(localStorage.getItem(KEYS.PROGRESS)) || {};
-            } catch {
-                return {};
+        function loadSettings() {
+            const saved = storage.json(KEYS.SETTINGS, {});
+            const merged = { ...DEFAULT_SETTINGS };
+            for (const [key, fallback] of Object.entries(DEFAULT_SETTINGS)) {
+                if (typeof saved[key] === typeof fallback) merged[key] = saved[key];
             }
+            if (!FONTS[merged.font]) merged.font = DEFAULT_SETTINGS.font;
+            return merged;
         }
+
+        // --- Zustand ---
+        let doc = null;           // { id, filename, words, paragraphEnds, chapters, start }
+        let currentMeta = null;   // Bibliothekseintrag des offenen Buchs (Lesezeichen, beendet …)
+        let weights = null;       // Float32Array: Zeitfaktor je Wort (Pacing)
+        let weightSums = null;    // Float64Array: Präfixsummen für Rest- und Anzeigezeiten
+        let boundaries = null;    // Uint8Array: 1 = letztes Wort eines Satzes/Absatzes
+        let chapterOrder = [];    // Kapitel nach Wortposition sortiert
+        let chapterPauseLevel = 0;
+        let index = 0;            // erstes angezeigtes Wort
+        let shownEnd = 0;         // letztes angezeigtes Wort (im Chunk-Modus > index)
+        let wpm = 450;
+        let playing = false;
+        let rafId = 0;
+        let deadline = 0;         // Zeitpunkt, an dem die aktuelle Anzeige wechselt
+        let lastFrame = 0;
+        let rampStep = 0;
+        let trainingMs = 0;
+        let wakeLock = null;
+        let lastSave = 0;
+        let settings = loadSettings();
+        let themePref = storage.get(KEYS.THEME) || 'auto';
+        let progress = storage.json(KEYS.PROGRESS, {});
+        let stats = storage.json(KEYS.STATS, { days: {}, finished: 0 });
+
+        // --- Bibliothek (IndexedDB) ---
+        // "docs" enthält die großen Wortlisten, "library" nur die Angaben für die Liste
+        // (Titel, Länge, Lesezeichen …), damit die Bibliothek ohne alle Bücher zu laden aufgeht.
+        // Alles liegt nur im Speicher dieses Geräts.
+        function metaFor(entry) {
+            const now = Date.now();
+            return {
+                id: entry.id,
+                filename: entry.filename,
+                totalWords: entry.words.length,
+                addedAt: now,
+                openedAt: now,
+                finishedAt: null,
+                bookmarks: [],
+            };
+        }
+
+        const library = {
+            connection: null,
+            open() {
+                this.connection ??= new Promise((resolve, reject) => {
+                    const req = indexedDB.open('fastreading', 2);
+                    req.onupgradeneeded = (event) => {
+                        const db = req.result;
+                        if (!db.objectStoreNames.contains('docs')) db.createObjectStore('docs', { keyPath: 'id' });
+                        if (db.objectStoreNames.contains('library')) return;
+                        const meta = db.createObjectStore('library', { keyPath: 'id' });
+                        // Version 1 kannte nur das zuletzt geöffnete Buch: in die Bibliothek übernehmen
+                        if (event.oldVersion < 1) return;
+                        req.transaction.objectStore('docs').openCursor().onsuccess = (e) => {
+                            const cursor = e.target.result;
+                            if (!cursor) return;
+                            meta.put(metaFor(cursor.value));
+                            cursor.continue();
+                        };
+                    };
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                return this.connection;
+            },
+            async run(stores, mode, action) {
+                const db = await this.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(stores, mode);
+                    const req = action(tx);
+                    tx.oncomplete = () => resolve(req?.result);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                });
+            },
+            getDoc(id) {
+                return this.run('docs', 'readonly', (tx) => tx.objectStore('docs').get(id));
+            },
+            getMeta(id) {
+                return this.run('library', 'readonly', (tx) => tx.objectStore('library').get(id));
+            },
+            list() {
+                return this.run('library', 'readonly', (tx) => tx.objectStore('library').getAll());
+            },
+            save(entry) {
+                return this.run(['docs', 'library'], 'readwrite', (tx) => {
+                    tx.objectStore('docs').put(entry);
+                    const meta = tx.objectStore('library');
+                    meta.get(entry.id).onsuccess = (e) => meta.put({
+                        ...metaFor(entry),
+                        ...e.target.result,
+                        filename: entry.filename,
+                        totalWords: entry.words.length,
+                        openedAt: Date.now(),
+                    });
+                });
+            },
+            update(id, patch) {
+                return this.run('library', 'readwrite', (tx) => {
+                    const meta = tx.objectStore('library');
+                    meta.get(id).onsuccess = (e) => {
+                        if (e.target.result) meta.put({ ...e.target.result, ...patch });
+                    };
+                });
+            },
+            remove(id) {
+                return this.run(['docs', 'library'], 'readwrite', (tx) => {
+                    tx.objectStore('docs').delete(id);
+                    tx.objectStore('library').delete(id);
+                });
+            },
+        };
 
         function saveProgress() {
             if (!doc || doc.id === 'demo') return;
@@ -718,33 +1592,26 @@
             storage.set(KEYS.PROGRESS, JSON.stringify(progress));
         }
 
-        // Wort-Arrays ganzer Bücher sprengen schnell das 5-MB-Limit von localStorage,
-        // deshalb liegt das aktuelle Dokument in IndexedDB.
-        const docCache = {
-            open() {
-                return new Promise((resolve, reject) => {
-                    const req = indexedDB.open('fastreading', 1);
-                    req.onupgradeneeded = () => req.result.createObjectStore('docs', { keyPath: 'id' });
-                    req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => reject(req.error);
-                });
-            },
-            async run(mode, action) {
-                const db = await this.open();
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction('docs', mode);
-                    const req = action(tx.objectStore('docs'));
-                    tx.oncomplete = () => { db.close(); resolve(req.result); };
-                    tx.onerror = () => { db.close(); reject(tx.error); };
-                });
-            },
-            get(id) {
-                return this.run('readonly', (store) => store.get(id));
-            },
-            put(entry) {
-                return this.run('readwrite', (store) => { store.clear(); return store.put(entry); });
-            },
-        };
+        // --- Lesestatistik ---
+        function dayKey(date) {
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+        }
+
+        function recordReading(words, ms) {
+            const today = (stats.days[dayKey(new Date())] ??= { w: 0, ms: 0 });
+            today.w += words;
+            today.ms += ms;
+        }
+
+        function saveStats() {
+            storage.set(KEYS.STATS, JSON.stringify(stats));
+        }
+
+        function persist() {
+            saveProgress();
+            saveStats();
+        }
 
         // --- Text-Analyse ---
         const LETTER = /[\p{L}\p{N}]/u;
@@ -810,23 +1677,48 @@
                 boundaries[i] = isParagraphEnd || endsSentence(word) ? 1 : 0;
             }
             chapterOrder = (doc.chapters || []).slice().sort((a, b) => a.index - b.index);
+            // Bei "Teil 1 > Kapitel 1 …" an Kapiteln pausieren, nicht nur an Teilen
+            chapterPauseLevel = chapterOrder.filter((c) => c.level === 0).length >= 3 ? 0 : 1;
         }
 
-        // Kapitel, in dem Wort i steht (binäre Suche); undefined vor dem ersten Kapitel
-        function chapterAt(i) {
+        // Position des Kapitels, in dem Wort i steht (binäre Suche); -1 vor dem ersten Kapitel
+        function chapterPosAt(i) {
             let lo = 0;
             let hi = chapterOrder.length - 1;
-            let found;
+            let found = -1;
             while (lo <= hi) {
                 const mid = (lo + hi) >> 1;
                 if (chapterOrder[mid].index <= i) {
-                    found = chapterOrder[mid];
+                    found = mid;
                     lo = mid + 1;
                 } else {
                     hi = mid - 1;
                 }
             }
             return found;
+        }
+
+        const chapterAt = (i) => chapterOrder[chapterPosAt(i)];
+
+        // Wortposition, an der das Kapitel nach dem bei pos endet
+        function chapterEnd(pos) {
+            let next = pos + 1;
+            while (next < chapterOrder.length && chapterOrder[next].index <= chapterOrder[pos].index) next++;
+            return next < chapterOrder.length ? chapterOrder[next].index : doc.words.length;
+        }
+
+        // Chunk-Modus: kurze Wörter zusammenfassen, aber nie über Satzzeichen oder Absätze hinweg
+        function chunkEnd(i) {
+            let end = i;
+            let chars = doc.words[i].length;
+            while (end - i + 1 < settings.chunk && end + 1 < doc.words.length
+                && !boundaries[end] && !CLAUSE_END.test(doc.words[end])) {
+                const next = doc.words[end + 1];
+                if (chars + 1 + next.length > CHUNK_MAX_CHARS) break;
+                chars += 1 + next.length;
+                end++;
+            }
+            return end;
         }
 
         function demoDoc() {
@@ -836,7 +1728,7 @@
                 words.push(...paragraph.split(/\s+/));
                 paragraphEnds.push(words.length - 1);
             }
-            return { id: 'demo', filename: 'Einführung', words, paragraphEnds };
+            return { id: 'demo', filename: 'Einführung', words, paragraphEnds, chapters: [], start: 0 };
         }
 
         // --- Rendering ---
@@ -849,12 +1741,13 @@
             }
         }
 
-        function formatRemaining() {
-            const ms = (weightSums[doc.words.length] - weightSums[index + 1]) * 60000 / wpm;
+        const readingMs = (from, to) => (weightSums[to] - weightSums[from]) * 60000 / wpm;
+
+        function formatDuration(ms) {
             const mins = Math.round(ms / 60000);
-            if (mins < 1) return ms > 0 ? 'noch < 1 min' : 'fertig';
-            if (mins < 60) return `noch ${mins} min`;
-            return `noch ${Math.floor(mins / 60)} h ${mins % 60} min`;
+            if (mins < 1) return '< 1 min';
+            if (mins < 60) return `${mins} min`;
+            return `${Math.floor(mins / 60)} h ${mins % 60} min`;
         }
 
         // Nur bei Änderung ins DOM schreiben, das läuft bei jedem Wort
@@ -864,84 +1757,147 @@
 
         function renderStatus() {
             const total = doc.words.length;
-            const ratio = (index + 1) / total;
+            const ratio = (shownEnd + 1) / total;
             elProgressFill.style.transform = `scaleX(${ratio})`;
             setText(elPercent, `${Math.floor(ratio * 100)} %`);
-            setText(elRemaining, formatRemaining());
-            const chapter = chapterAt(index);
+            const left = readingMs(shownEnd + 1, total);
+            setText(elRemaining, left > 0 ? `noch ${formatDuration(left)}` : 'fertig');
+
             elStatus.classList.remove('is-message');
-            setText(elStatus, chapter
-                ? chapter.title
-                : `${numberFormat.format(index + 1)} / ${numberFormat.format(total)} Wörter`);
+            const pos = chapterPosAt(index);
+            if (pos >= 0) {
+                setText(elStatus, chapterOrder[pos].title);
+                setText(elChapterTime, ` · ${formatDuration(readingMs(index, chapterEnd(pos)))}`);
+            } else {
+                setText(elStatus, `${numberFormat.format(index + 1)} / ${numberFormat.format(total)} Wörter`);
+                setText(elChapterTime, '');
+            }
         }
 
         function render() {
-            const [left, orp, right] = splitAtOrp(doc.words[index]);
+            shownEnd = settings.chunk > 1 ? chunkEnd(index) : index;
+            const text = shownEnd > index ? doc.words.slice(index, shownEnd + 1).join(' ') : doc.words[index];
+            const [left, orp, right] = splitAtOrp(text);
             elLeft.textContent = left;
             elOrp.textContent = orp;
             elRight.textContent = right;
             fitWord();
             renderStatus();
+            if (!playing) renderContext();
         }
 
         function showMessage(text) {
             elStatus.classList.add('is-message');
             elStatus.textContent = text;
+            elChapterTime.textContent = '';
         }
 
-        // --- Kapitelansicht ---
-        function openToc() {
-            const current = chapterAt(index);
-            elTocList.replaceChildren(...doc.chapters.map((chapter) => {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'toc-item';
-                button.style.setProperty('--level', Math.min(chapter.level, 3));
-                if (chapter === current) button.classList.add('is-current');
-                else if (current && chapter.index < current.index) button.classList.add('is-read');
-                const title = document.createElement('span');
-                title.className = 'toc-title';
-                title.textContent = chapter.title;
-                const position = document.createElement('span');
-                position.className = 'toc-pos';
-                position.textContent = `${Math.floor((chapter.index / doc.words.length) * 100)} %`;
-                button.append(title, position);
-                button.addEventListener('click', () => {
-                    seek(chapter.index);
-                    saveProgress();
-                    elTocDialog.close();
-                });
-                const item = document.createElement('li');
-                item.append(button);
-                return item;
-            }));
-            elTocDialog.showModal();
-            elTocList.querySelector('.is-current')?.scrollIntoView({ block: 'center' });
+        let toastTimer = 0;
+        function showToast(text) {
+            elToast.textContent = text;
+            elToast.classList.add('is-visible');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => elToast.classList.remove('is-visible'), 1600);
+        }
+
+        // Absatz (von/bis Wort), in dem Wort i steht
+        function paragraphBounds(i) {
+            const ends = doc.paragraphEnds;
+            let lo = 0;
+            let hi = ends.length - 1;
+            let pos = ends.length - 1;
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1;
+                if (ends[mid] >= i) {
+                    pos = mid;
+                    hi = mid - 1;
+                } else {
+                    lo = mid + 1;
+                }
+            }
+            return [pos > 0 ? ends[pos - 1] + 1 : 0, ends.length ? ends[pos] : doc.words.length - 1];
+        }
+
+        function renderContext() {
+            const visible = Boolean(doc && settings.context && !playing);
+            elContext.hidden = !visible;
+            document.body.classList.toggle('has-context', visible);
+            if (!visible) return;
+
+            const [paraStart, paraEnd] = paragraphBounds(index);
+            const start = Math.max(paraStart, index - CONTEXT_WORDS);
+            const end = Math.min(paraEnd, shownEnd + CONTEXT_WORDS);
+            const fragment = document.createDocumentFragment();
+            if (start > paraStart) fragment.append('… ');
+            for (let i = start; i <= end; i++) {
+                const span = document.createElement('span');
+                span.textContent = doc.words[i];
+                span.dataset.i = i;
+                if (i >= index && i <= shownEnd) span.className = 'is-current';
+                fragment.append(span, ' ');
+            }
+            if (end < paraEnd) fragment.append('…');
+            elContextText.replaceChildren(fragment);
+            elContextText.querySelector('.is-current')?.scrollIntoView({ block: 'nearest' });
         }
 
         // --- Wiedergabe: requestAnimationFrame mit absoluten Deadlines (kein Drift) ---
-        function delayFor(i) {
+        function displayDelay() {
             const ramp = rampStep < RAMP.length ? RAMP[rampStep] : 1;
-            return weights[i] * ramp * 60000 / wpm;
+            return readingMs(index, shownEnd + 1) * ramp;
+        }
+
+        function trainTempo(ms) {
+            if (!settings.training || wpm >= settings.trainingTarget) return;
+            trainingMs += ms;
+            if (trainingMs < 60000) return;
+            trainingMs -= 60000;
+            setWpm(Math.min(settings.trainingTarget, wpm + settings.trainingStep));
+            showToast(`⚡ Tempo-Training: ${wpm} WPM`);
+        }
+
+        function finishBook() {
+            showToast('🎉 Fertig gelesen!');
+            if (!currentMeta || currentMeta.finishedAt) return;
+            currentMeta.finishedAt = Date.now();
+            library.update(doc.id, { finishedAt: currentMeta.finishedAt }).catch(() => {});
+            stats.finished = (stats.finished || 0) + 1;
+            saveStats();
         }
 
         function tick(now) {
             if (!playing) return;
+            if (lastFrame) {
+                const ms = Math.min(now - lastFrame, 250);
+                recordReading(0, ms);
+                trainTempo(ms);
+            }
+            lastFrame = now;
+
             if (!deadline) {
-                deadline = now + delayFor(index);
+                deadline = now + displayDelay();
             } else if (now >= deadline) {
-                if (index >= doc.words.length - 1) {
+                recordReading(shownEnd - index + 1, 0);
+                if (shownEnd >= doc.words.length - 1) {
                     pause();
+                    finishBook();
                     return;
                 }
-                index++;
+                const before = chapterAt(index);
+                index = shownEnd + 1;
                 rampStep++;
                 render();
-                const delay = delayFor(index);
+                const entered = chapterAt(index);
+                if (settings.chapterPause && entered && entered !== before && entered.level <= chapterPauseLevel) {
+                    pause();
+                    showToast('✓ Kapitel geschafft – tippen zum Weiterlesen');
+                    return;
+                }
+                const delay = displayDelay();
                 // Kleine Verspätungen ausgleichen, nach einem Hänger aber nicht durchrasen
                 deadline = now - deadline > delay ? now + delay : deadline + delay;
                 if (now - lastSave > SAVE_INTERVAL) {
-                    saveProgress();
+                    persist();
                     lastSave = now;
                 }
             }
@@ -950,14 +1906,16 @@
 
         function play() {
             if (playing || !doc) return;
-            if (index >= doc.words.length - 1) {
+            if (shownEnd >= doc.words.length - 1) {
                 index = 0;
                 render();
             }
             playing = true;
             deadline = 0;
+            lastFrame = 0;
             rampStep = 0;
             document.body.classList.add('is-playing');
+            renderContext();
             requestWakeLock();
             rafId = requestAnimationFrame(tick);
         }
@@ -968,7 +1926,8 @@
             cancelAnimationFrame(rafId);
             document.body.classList.remove('is-playing');
             releaseWakeLock();
-            saveProgress();
+            persist();
+            renderContext();
         }
 
         function togglePlay() {
@@ -997,7 +1956,7 @@
         }
 
         function nextSentence() {
-            let i = index;
+            let i = shownEnd;
             while (i < doc.words.length - 1 && !boundaries[i]) i++;
             seek(i + 1);
             saveProgress();
@@ -1018,18 +1977,406 @@
             wakeLock = null;
         }
 
+        // --- Lesezeichen ---
+        async function addBookmark() {
+            if (!doc || !currentMeta) {
+                showToast('Lesezeichen gibt es nur in Büchern aus der Bibliothek');
+                return;
+            }
+            const start = sentenceStart(index);
+            let end = start;
+            while (end < doc.words.length - 1 && !boundaries[end] && end - start < 80) end++;
+            if (currentMeta.bookmarks.some((mark) => mark.index === start)) {
+                showToast('🔖 Dieser Satz ist schon gespeichert');
+                return;
+            }
+            currentMeta.bookmarks.push({
+                index: start,
+                text: doc.words.slice(start, end + 1).join(' '),
+                chapter: chapterAt(start)?.title || null,
+                createdAt: Date.now(),
+            });
+            currentMeta.bookmarks.sort((a, b) => a.index - b.index);
+            showToast('🔖 Satz gespeichert');
+            await library.update(doc.id, { bookmarks: currentMeta.bookmarks }).catch(() => {});
+        }
+
+        async function removeBookmark(mark) {
+            currentMeta.bookmarks = currentMeta.bookmarks.filter((m) => m !== mark);
+            await library.update(doc.id, { bookmarks: currentMeta.bookmarks }).catch(() => {});
+            renderMarks();
+        }
+
+        async function shareBookmarks() {
+            const marks = currentMeta?.bookmarks || [];
+            if (!marks.length) return;
+            const text = [`„${doc.filename}“ – Lesezeichen`, ...marks.map((mark) => (
+                `„${mark.text}“\n— ${[mark.chapter, `${Math.floor((mark.index / doc.words.length) * 100)} %`].filter(Boolean).join(', ')}`
+            ))].join('\n\n');
+            try {
+                if (navigator.share) {
+                    await navigator.share({ title: doc.filename, text });
+                } else {
+                    await navigator.clipboard.writeText(text);
+                    showToast('In die Zwischenablage kopiert');
+                }
+            } catch {}
+        }
+
+        // --- Gesten auf der Lesefläche ---
+        let gesture = null;
+        let suppressClickUntil = 0;
+
+        elStage.addEventListener('pointerdown', (e) => {
+            if (!doc || e.target.closest('.hud, .context')) return;
+            const current = { id: e.pointerId, x: e.clientX, y: e.clientY, long: false };
+            gesture = current;
+            current.timer = setTimeout(() => {
+                current.long = true;
+                suppressClickUntil = performance.now() + GESTURE_CLICK_WINDOW;
+                addBookmark();
+            }, LONG_PRESS);
+        });
+
+        elStage.addEventListener('pointermove', (e) => {
+            if (gesture?.id === e.pointerId && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 12) {
+                clearTimeout(gesture.timer);
+            }
+        });
+
+        elStage.addEventListener('pointerup', (e) => {
+            if (gesture?.id !== e.pointerId) return;
+            const { x, y, long, timer } = gesture;
+            gesture = null;
+            clearTimeout(timer);
+            if (long) return;
+            const dx = e.clientX - x;
+            const dy = e.clientY - y;
+            if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_MIN) return; // normaler Tap → click
+            suppressClickUntil = performance.now() + GESTURE_CLICK_WINDOW;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx > 0) {
+                    rewindSentence();
+                    showToast('↺ Satz zurück');
+                } else {
+                    nextSentence();
+                    showToast('Satz vor ↻');
+                }
+            } else {
+                setWpm(wpm + (dy < 0 ? 25 : -25));
+                showToast(`${wpm} WPM`);
+            }
+        });
+
+        elStage.addEventListener('pointercancel', () => {
+            if (gesture) clearTimeout(gesture.timer);
+            gesture = null;
+        });
+
+        // --- Dialoge ---
+        function selectTab(dialog, name) {
+            dialog.querySelectorAll('[role="tab"]').forEach((tab) => {
+                tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
+            });
+            dialog.querySelectorAll('[data-panel]').forEach((panel) => { panel.hidden = panel.dataset.panel !== name; });
+        }
+
+        function element(tag, className, text) {
+            const el = document.createElement(tag);
+            if (className) el.className = className;
+            if (text !== undefined) el.textContent = text;
+            return el;
+        }
+
+        const percentOf = (i, total) => `${Math.floor((i / total) * 100)} %`;
+
+        // Buch: Kapitel & Lesezeichen
+        function renderChapters() {
+            if (!doc.chapters?.length) {
+                elTocList.replaceChildren(element('li', 'empty', 'Dieses Dokument hat keine Kapitel.'));
+                return;
+            }
+            const current = chapterAt(index);
+            elTocList.replaceChildren(...doc.chapters.map((chapter) => {
+                const button = element('button', 'toc-item');
+                button.type = 'button';
+                button.style.setProperty('--level', Math.min(chapter.level, 3));
+                if (chapter === current) button.classList.add('is-current');
+                else if (current && chapter.index < current.index) button.classList.add('is-read');
+                button.append(element('span', 'toc-title', chapter.title), element('span', 'toc-pos', percentOf(chapter.index, doc.words.length)));
+                button.addEventListener('click', () => {
+                    seek(chapter.index);
+                    saveProgress();
+                    elBookDialog.close();
+                });
+                const item = element('li');
+                item.append(button);
+                return item;
+            }));
+        }
+
+        function renderMarks() {
+            const marks = currentMeta?.bookmarks || [];
+            elMarksTab.textContent = marks.length ? `Lesezeichen (${marks.length})` : 'Lesezeichen';
+            $('marks-toolbar').hidden = !marks.length;
+            if (!marks.length) {
+                elMarksList.replaceChildren(element('li', 'empty',
+                    'Noch keine Lesezeichen. Halte beim Lesen den Finger auf dem Text, um den aktuellen Satz zu speichern.'));
+                return;
+            }
+            elMarksList.replaceChildren(...marks.map((mark) => {
+                const open = element('button', 'row-main');
+                open.type = 'button';
+                open.append(
+                    element('span', 'mark-quote', `„${mark.text}“`),
+                    element('span', 'row-meta', [mark.chapter, percentOf(mark.index, doc.words.length)].filter(Boolean).join(' · ')),
+                );
+                open.addEventListener('click', () => {
+                    seek(mark.index);
+                    saveProgress();
+                    elBookDialog.close();
+                });
+                const remove = element('button', 'icon-btn', '✕');
+                remove.type = 'button';
+                remove.setAttribute('aria-label', 'Lesezeichen löschen');
+                remove.addEventListener('click', () => removeBookmark(mark));
+                const row = element('li', 'row');
+                row.append(open, remove);
+                return row;
+            }));
+        }
+
+        function openBookSheet() {
+            renderChapters();
+            renderMarks();
+            selectTab(elBookDialog, doc.chapters?.length ? 'chapters' : 'marks');
+            elBookDialog.showModal();
+            elTocList.querySelector('.is-current')?.scrollIntoView({ block: 'center' });
+        }
+
+        // Bibliothek
+        function relativeDay(time) {
+            const days = Math.round((new Date(dayKey(new Date())) - new Date(dayKey(new Date(time)))) / 86400000);
+            if (days <= 0) return 'heute';
+            if (days === 1) return 'gestern';
+            if (days < 7) return `vor ${days} Tagen`;
+            return new Date(time).toLocaleDateString('de-DE');
+        }
+
+        async function renderLibrary() {
+            let books = [];
+            try {
+                books = (await library.list()).sort((a, b) => b.openedAt - a.openedAt);
+            } catch {}
+            if (!books.length) {
+                elLibraryList.replaceChildren(element('li', 'empty',
+                    'Noch keine Bücher. Öffne eine Datei oder füge einen Text ein – alles landet automatisch hier.'));
+            } else {
+                elLibraryList.replaceChildren(...books.map((book) => {
+                    const at = progress[book.id]?.i ?? 0;
+                    const ratio = book.finishedAt ? 1 : Math.min(1, (at + 1) / book.totalWords);
+                    const open = element('button', 'row-main');
+                    open.type = 'button';
+                    const bar = element('span', 'row-bar');
+                    const fill = element('span');
+                    fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+                    bar.append(fill);
+                    open.append(
+                        element('span', 'row-title', book.filename),
+                        element('span', 'row-meta', [
+                            book.finishedAt ? '✓ fertig' : `${Math.floor(ratio * 100)} %`,
+                            `${numberFormat.format(book.totalWords)} Wörter`,
+                            relativeDay(book.openedAt),
+                            book.bookmarks?.length ? `🔖 ${book.bookmarks.length}` : null,
+                        ].filter(Boolean).join(' · ')),
+                        bar,
+                    );
+                    open.addEventListener('click', () => openFromLibrary(book.id));
+                    const remove = element('button', 'icon-btn', '🗑');
+                    remove.type = 'button';
+                    remove.setAttribute('aria-label', `${book.filename} löschen`);
+                    remove.addEventListener('click', () => deleteFromLibrary(book));
+                    const row = element('li', `row${doc?.id === book.id ? ' is-current' : ''}`);
+                    row.append(open, remove);
+                    return row;
+                }));
+            }
+            let note = 'Alle Bücher liegen nur auf diesem Gerät.';
+            try {
+                const { usage } = await navigator.storage.estimate();
+                note += ` Belegt: ${numberFormat.format(Math.max(1, Math.round(usage / 1048576)))} MB.`;
+            } catch {}
+            $('library-note').textContent = note;
+        }
+
+        async function openFromLibrary(id) {
+            elLibraryDialog.close();
+            if (doc?.id === id) return;
+            try {
+                const entry = await library.getDoc(id);
+                if (!entry) throw new Error('nicht gefunden');
+                pause();
+                openDoc(entry);
+                storage.set(KEYS.CURRENT_DOC, id);
+                library.update(id, { openedAt: Date.now() }).catch(() => {});
+            } catch {
+                showMessage('Fehler: Buch konnte nicht geladen werden');
+            }
+        }
+
+        async function deleteFromLibrary(book) {
+            if (!confirm(`„${book.filename}“ aus der Bibliothek löschen? Fortschritt und Lesezeichen gehen verloren.`)) return;
+            await library.remove(book.id).catch(() => {});
+            delete progress[book.id];
+            storage.set(KEYS.PROGRESS, JSON.stringify(progress));
+            if (doc?.id === book.id) {
+                storage.remove(KEYS.CURRENT_DOC);
+                openDoc(demoDoc());
+            }
+            renderLibrary();
+        }
+
+        // Statistik
+        function compact(n) {
+            return n >= 1000 ? `${numberFormat.format(Math.round(n / 100) / 10)}k` : numberFormat.format(n);
+        }
+
+        function renderStats() {
+            const days = [];
+            for (let k = STATS_DAYS - 1; k >= 0; k--) {
+                const date = new Date();
+                date.setDate(date.getDate() - k);
+                days.push({ date, ...(stats.days[dayKey(date)] || { w: 0, ms: 0 }) });
+            }
+            const all = Object.values(stats.days);
+            const sum = (list, key) => list.reduce((total, day) => total + day[key], 0);
+            const today = days[days.length - 1];
+            const week = days.slice(-7);
+            const totalWords = sum(all, 'w');
+            const totalMs = sum(all, 'ms');
+
+            let streak = 0;
+            const cursor = new Date();
+            if (!stats.days[dayKey(cursor)]?.w) cursor.setDate(cursor.getDate() - 1); // heute noch nicht gelesen
+            while (stats.days[dayKey(cursor)]?.w) {
+                streak++;
+                cursor.setDate(cursor.getDate() - 1);
+            }
+
+            const minutes = (ms) => (ms > 0 ? formatDuration(ms) : '0 min');
+            const tiles = [
+                ['Heute', compact(today.w), `Wörter · ${minutes(today.ms)}`],
+                ['Letzte 7 Tage', compact(sum(week, 'w')), `Wörter · ${minutes(sum(week, 'ms'))}`],
+                ['Serie', `${streak}`, streak === 1 ? 'Tag am Stück' : 'Tage am Stück'],
+                ['Ø Tempo', totalMs > 60000 ? numberFormat.format(Math.round(totalWords / (totalMs / 60000))) : '–', 'Wörter pro Minute'],
+                ['Insgesamt', compact(totalWords), `Wörter · ${formatDuration(totalMs)}`],
+                ['Fertig gelesen', `${stats.finished || 0}`, stats.finished === 1 ? 'Buch' : 'Bücher'],
+            ];
+            $('stats-tiles').replaceChildren(...tiles.map(([label, value, sub]) => {
+                const tile = element('div', 'tile');
+                tile.append(element('span', 'tile-label', label), element('span', 'tile-value', value), element('span', 'tile-sub', sub));
+                return tile;
+            }));
+
+            const max = Math.max(...days.map((day) => day.w));
+            const plot = $('chart-plot');
+            const detail = $('chart-detail');
+            const describe = (day) => `${day.date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' })}: ${numberFormat.format(day.w)} Wörter · ${minutes(day.ms)}`;
+            const maxLine = element('div', 'chart-max');
+            maxLine.append(element('span', '', max ? compact(max) : ''));
+            const columns = days.map((day, k) => {
+                const column = element('button', `chart-col${k === days.length - 1 ? ' is-today' : ''}`);
+                column.type = 'button';
+                column.setAttribute('aria-label', describe(day));
+                const bar = element('span');
+                bar.style.height = max ? `${(day.w / max) * 100}%` : '0';
+                column.append(bar);
+                column.addEventListener('click', () => {
+                    const selected = column.getAttribute('aria-pressed') !== 'true';
+                    columns.forEach((c) => c.setAttribute('aria-pressed', String(c === column && selected)));
+                    plot.classList.toggle('has-selection', selected);
+                    detail.textContent = describe(selected ? day : today);
+                });
+                return column;
+            });
+            plot.classList.remove('has-selection');
+            plot.replaceChildren(maxLine, ...columns);
+            $('chart-days').replaceChildren(...days.map((day, k) => element('span', '',
+                k === days.length - 1 ? 'heute' : day.date.toLocaleDateString('de-DE', { weekday: 'short' }).slice(0, 2))));
+            detail.textContent = describe(today);
+        }
+
+        function openLibrary(tab = 'books') {
+            persist();
+            renderLibrary();
+            renderStats();
+            selectTab(elLibraryDialog, tab);
+            elLibraryDialog.showModal();
+        }
+
+        // Einstellungen
+        const resolveTheme = (pref) => (pref === 'auto'
+            ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+            : pref);
+
+        function applyAppearance() {
+            const root = document.documentElement;
+            root.dataset.theme = resolveTheme(themePref);
+            root.dataset.orp = settings.orp;
+            root.style.setProperty('--word-scale', settings.scale);
+            root.style.setProperty('--reading-font', FONTS[settings.font]);
+            root.style.setProperty('--reading-weight', settings.weight);
+            document.body.classList.toggle('no-guides', !settings.guides);
+            elThemeColor.content = getComputedStyle(root).getPropertyValue('--bg').trim();
+        }
+
+        function syncSettingsUI() {
+            const current = { ...settings, theme: themePref };
+            elSettingsDialog.querySelectorAll('[data-setting][data-value]').forEach((button) => {
+                button.setAttribute('aria-pressed', String(String(current[button.dataset.setting]) === button.dataset.value));
+            });
+            elSettingsDialog.querySelectorAll('input[data-setting]').forEach((input) => {
+                if (input.type === 'checkbox') input.checked = current[input.dataset.setting];
+                else input.value = current[input.dataset.setting];
+            });
+            elSettingsDialog.querySelector('[data-output="scale"]').textContent = `${Math.round(settings.scale * 100)} %`;
+            elSettingsDialog.querySelector('[data-output="trainingTarget"]').textContent = `${settings.trainingTarget} WPM`;
+            $('training-options').hidden = !settings.training;
+        }
+
+        function updateSetting(key, value) {
+            if (key === 'theme') {
+                themePref = value;
+                storage.set(KEYS.THEME, value);
+            } else {
+                settings[key] = typeof DEFAULT_SETTINGS[key] === 'number' ? Number(value) : value;
+                storage.set(KEYS.SETTINGS, JSON.stringify(settings));
+            }
+            if (key === 'training') trainingMs = 0;
+            applyAppearance();
+            syncSettingsUI();
+            if (doc) render();
+        }
+
         // --- Dokumente laden ---
         function openDoc(next) {
             saveProgress();
             doc = next;
+            currentMeta = null;
             analyze();
             const saved = progress[doc.id];
             // Neue Bücher beginnen beim eigentlichen Text (nach Titelei & Inhaltsverzeichnis)
             index = Math.min(saved ? saved.i : doc.start || 0, doc.words.length - 1);
             elDocName.textContent = doc.filename;
-            elTocBtn.disabled = chapterOrder.length < 2;
+            elTocBtn.disabled = doc.id === 'demo';
             render();
             if (!saved && doc.start > 0) showMessage('Vorspann übersprungen – ☰ zeigt alle Kapitel');
+            if (doc.id !== 'demo') {
+                const id = doc.id;
+                library.getMeta(id).then((meta) => {
+                    if (meta && doc?.id === id) currentMeta = meta;
+                }).catch(() => {});
+            }
         }
 
         // Gemeinsamer Ablauf für Dateien und eingefügten Text
@@ -1044,9 +2391,12 @@
                 openDoc(await produce(extractor));
                 storage.set(KEYS.CURRENT_DOC, doc.id);
                 try {
-                    await docCache.put(doc);
+                    await library.save(doc);
+                    currentMeta = (await library.getMeta(doc.id)) || null;
+                    // Bitte, die Bibliothek nicht bei Speicherknappheit automatisch zu löschen
+                    navigator.storage?.persist?.().catch(() => {});
                 } catch (err) {
-                    console.warn('Dokument konnte nicht lokal gecacht werden:', err);
+                    console.warn('Dokument konnte nicht in der Bibliothek gespeichert werden:', err);
                 }
             } catch (err) {
                 showMessage(`Fehler: ${err.message}`);
@@ -1060,8 +2410,19 @@
             loadDocument(`Lese ${file.name} …`, (extractor) => extractor.extractDocument(file, showMessage));
         }
 
-        function openText(text) {
-            loadDocument('Bereite Text vor …', (extractor) => extractor.documentFromText(text));
+        function openText(text, title) {
+            loadDocument('Bereite Text vor …', (extractor) => extractor.documentFromText(text, title));
+        }
+
+        // iOS-Kurzbefehl: …/reader/#text=… öffnet den Text direkt. Das Fragment (#) wird nie
+        // an den Server geschickt, der Text bleibt also auf dem Gerät.
+        function importFromLink() {
+            const params = new URLSearchParams(location.hash.slice(1));
+            const text = params.get('text')?.trim();
+            if (!text) return false;
+            history.replaceState(null, '', location.pathname + location.search);
+            openText(text, params.get('title')?.trim() || null);
+            return true;
         }
 
         function setMenu(open) {
@@ -1069,7 +2430,6 @@
             elOpenBtn.setAttribute('aria-expanded', String(open));
         }
 
-        // --- Einstellungen ---
         function setWpm(value) {
             wpm = Math.max(WPM_MIN, Math.min(WPM_MAX, value));
             elWpmSlider.value = wpm;
@@ -1078,27 +2438,39 @@
             if (doc) renderStatus();
         }
 
-        function applyTheme(theme) {
-            document.documentElement.dataset.theme = theme;
-            elThemeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
-            elThemeColor.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
-        }
-
         // --- Events ---
         document.addEventListener('click', (e) => {
+            // Klick, der nur das Ende einer Geste auf der Lesefläche ist, ignorieren
+            if (performance.now() < suppressClickUntil && e.target.closest('.stage')) return;
             // Tap neben das offene Menü schließt nur das Menü
             if (!elMenu.hidden && !e.target.closest('.open-menu')) {
                 setMenu(false);
                 return;
             }
+            if (e.target.closest('[data-close]')) {
+                e.target.closest('dialog')?.close();
+                return;
+            }
+            const tab = e.target.closest('[role="tab"]');
+            if (tab) {
+                selectTab(tab.closest('dialog'), tab.dataset.tab);
+                return;
+            }
+            const contextWord = e.target.closest('.context-text [data-i]');
+            if (contextWord) {
+                seek(Number(contextWord.dataset.i));
+                saveProgress();
+                return;
+            }
             // Während des Lesens sind alle Controls inaktiv, also pausiert jeder Tap
-            if (e.target.closest('.controls, .hud button, .progress, dialog')) return;
+            if (e.target.closest('.controls, .hud button, .progress, dialog, .context')) return;
             togglePlay();
         });
 
         elOpenBtn.addEventListener('click', () => setMenu(elMenu.hidden));
         // Erst nach dem Klick schließen, damit das Label die Dateiauswahl noch öffnet
         elMenu.addEventListener('click', () => setTimeout(() => setMenu(false)));
+        $('library-btn').addEventListener('click', () => openLibrary());
 
         $('paste-btn').addEventListener('click', () => {
             elPasteText.value = '';
@@ -1113,7 +2485,6 @@
                 elPasteText.focus(); // Zugriff verweigert: manuell einfügen
             }
         });
-        $('paste-cancel').addEventListener('click', () => elPasteDialog.close());
         $('paste-read').addEventListener('click', () => {
             const text = elPasteText.value.trim();
             if (!text) {
@@ -1125,8 +2496,24 @@
         });
 
         elRewind.addEventListener('click', rewindSentence);
-        elTocBtn.addEventListener('click', openToc);
-        $('toc-close').addEventListener('click', () => elTocDialog.close());
+        elTocBtn.addEventListener('click', openBookSheet);
+        $('marks-share').addEventListener('click', shareBookmarks);
+
+        $('settings-btn').addEventListener('click', () => {
+            syncSettingsUI();
+            elSettingsDialog.showModal();
+        });
+        elSettingsDialog.addEventListener('click', (e) => {
+            const button = e.target.closest('[data-setting][data-value]');
+            if (button) updateSetting(button.dataset.setting, button.dataset.value);
+        });
+        elSettingsDialog.addEventListener('input', (e) => {
+            const input = e.target.closest('input[data-setting]');
+            if (input) updateSetting(input.dataset.setting, input.type === 'checkbox' ? input.checked : input.value);
+        });
+        matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+            if (themePref === 'auto') applyAppearance();
+        });
 
         elFileInput.addEventListener('change', () => {
             const file = elFileInput.files[0];
@@ -1135,12 +2522,6 @@
         });
 
         elWpmSlider.addEventListener('input', () => setWpm(parseInt(elWpmSlider.value, 10)));
-
-        elThemeToggle.addEventListener('click', () => {
-            const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-            applyTheme(next);
-            storage.set(KEYS.THEME, next);
-        });
 
         function scrubTo(e) {
             const rect = elProgress.querySelector('.progress-track').getBoundingClientRect();
@@ -1160,13 +2541,15 @@
         elProgress.addEventListener('pointercancel', saveProgress);
 
         document.addEventListener('keydown', (e) => {
-            if (!doc || elPasteDialog.open || elTocDialog.open || e.target.matches('input, button, textarea')) return;
+            if (e.key === 'Escape') setMenu(false);
+            if (!doc || document.querySelector('dialog[open]') || e.target.matches('input, button, textarea')) return;
             const actions = {
                 ' ': togglePlay,
                 ArrowLeft: rewindSentence,
                 ArrowRight: nextSentence,
                 ArrowUp: () => setWpm(wpm + 25),
                 ArrowDown: () => setWpm(wpm - 25),
+                b: addBookmark,
             };
             const action = actions[e.key];
             if (action) {
@@ -1175,19 +2558,20 @@
             }
         });
 
-        // App-Wechsel, Sperrbildschirm, Tab-Wechsel: pausieren und Position sichern
+        // App-Wechsel, Sperrbildschirm, Tab-Wechsel: pausieren und alles sichern
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 pause();
-                saveProgress();
+                persist();
             }
         });
-        window.addEventListener('pagehide', saveProgress);
+        window.addEventListener('pagehide', persist);
         window.addEventListener('resize', () => { if (doc) fitWord(); });
+        window.addEventListener('hashchange', importFromLink);
 
         // --- Start ---
         async function init() {
-            applyTheme(document.documentElement.dataset.theme);
+            applyAppearance();
             const savedWpm = parseInt(storage.get(KEYS.WPM), 10);
             setWpm(Number.isNaN(savedWpm) ? wpm : savedWpm);
 
@@ -1195,13 +2579,14 @@
             let cached = null;
             if (currentId) {
                 try {
-                    cached = await docCache.get(currentId);
+                    cached = await library.getDoc(currentId);
                 } catch (err) {
-                    console.warn('Dokument-Cache nicht verfügbar:', err);
+                    console.warn('Bibliothek nicht verfügbar:', err);
                 }
             }
             openDoc(cached || demoDoc());
             if (currentId && !cached) showMessage('Letztes Dokument bitte neu öffnen');
+            importFromLink();
 
             // Offline-Fähigkeit: App-Dateien inkl. pdf.js im Service Worker cachen
             if ('serviceWorker' in navigator) {

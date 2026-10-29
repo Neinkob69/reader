@@ -833,9 +833,9 @@ export async function extractDocument(file, onProgress) {
     return finish(id, result.title || file.name.replace(/\.[^.]+$/, ''), result);
 }
 
-// Eingefügter Text (z. B. ein Artikel aus der Zwischenablage); Titel = die ersten Wörter
-export async function documentFromText(text) {
+// Eingefügter Text (z. B. ein Artikel aus der Zwischenablage); ohne Titel = die ersten Wörter
+export async function documentFromText(text, title = null) {
     const id = await fingerprint(new TextEncoder().encode(text).buffer, `text:${text.length}`);
     const paragraphs = textParagraphs(text);
-    return finish(id, null, { paragraphs, chapters: textChapters(paragraphs) });
+    return finish(id, title, { paragraphs, chapters: textChapters(paragraphs) });
 }

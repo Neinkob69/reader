@@ -2,7 +2,7 @@
 // Stale-while-revalidate: sofort aus dem Cache antworten, im Hintergrund aktualisieren.
 // Neue Versionen sind dadurch ab dem übernächsten Öffnen aktiv.
 
-const CACHE = 'fastreading-v2';
+const CACHE = 'fastreading-v3';
 const ASSETS = [
     './',
     'index.html',
@@ -13,6 +13,8 @@ const ASSETS = [
     'icons/icon-512.png',
     'vendor/pdfjs/pdf.min.js',
     'vendor/pdfjs/pdf.worker.min.js',
+    'vendor/fonts/atkinson-hyperlegible-latin-400-normal.woff2',
+    'vendor/fonts/atkinson-hyperlegible-latin-700-normal.woff2',
 ];
 
 self.addEventListener('install', (event) => {
